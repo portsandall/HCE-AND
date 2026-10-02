@@ -104,64 +104,66 @@ The left stick moves; drag anywhere outside it to look around. Looking uses
 relative finger displacement directly, with no right stick acceleration.
 Action buttons stay held while dragging, so either Fire button can also aim.
 A second Fire button on the left lets you shoot while aiming with the right hand.
-Use A to accept menu items and B to go back, and the on-screen D-pad to
-navigate. Touch **Hide** to hide the controls and **Touch** to show them again.
-Hiding controls or leaving the app releases every touch input.
+Menus accept direct taps on the rendered items, including the in-game
+keyboard used for names. The game maps touch positions through the same
+letterboxing and widescreen centering as the renderer. Android Back returns
+to the previous screen. Touch buttons, swipe aiming, phone rumble and gyro
+aim stop while a game menu is open. Controls appear during gameplay;
+**Hide** hides them and **Touch** restores them.
 
-### Touch options
+### Porting options (3.0)
 
-Tap the circular, white-outline **Options** button to open:
+The main menu adds **Porting options** beneath Campaign, Multiplayer and
+Settings. The pause menu adds **Overlay settings**, **Hardware** and
+**Cheats** beneath its existing actions. These screens are rendered by Halo,
+using the menu font and colors from the loaded map's widget definitions.
+The engine extends `ui.map` and the level pause UI at runtime; imported map
+files do not need to be replaced or modified.
 
-- **Edit buttons layout**: drag the buttons and movement stick anywhere
-  across the full display, up to its edges. Tap the circular **Save and exit**
-  button to save and resume. The game keeps running; pause first to arrange
-  the controls during a campaign or match. Existing button positions are retained;
-  the old look stick is replaced by the additional Fire button. The circular
-  **Export** and **Import** buttons open a confirmation popup followed by
-  Android's document picker. Export lets you choose the folder and filename;
-  import lets you browse for a `.halolayout` file and applies it immediately.
-  Files preserve positions, hidden controls, duplicates, individual sizes,
-  look sensitivity, Rumble and Gyroscope settings.
-  Invalid files are rejected before changing the current layout.
-- **General** contains **Rumble**, **Gyroscope aim (Experimental)**,
-  **Hide or add buttons** and **Edit buttons size**.
-  Rumble defaults to on and mirrors player 1's controller motor requests to
-  the smartphone vibrator, even without a physical controller or when the
-  Xbox profile disables controller vibration. Phone effects come directly from
-  player 1's rumble update and use Android game audio attributes with a
-  perceptible minimum amplitude. It preserves
-  controller rumble and stops phone vibration when disabled or the app loses focus.
-  Gyroscope aim defaults to off, uses the phone's angular velocity to add yaw
-  and pitch to touch aiming with corrected vertical tilt direction, supports
-  both landscape orientations, and follows
-  look sensitivity. Sensors stop when the app is unfocused; motion does not
-  reach the game while Options or the layout editor is open. Hardware-dependent
-  toggles are disabled when the device has no vibrator or gyroscope.
-  Hide/add lets you show or hide controls, restore a hidden button with
-  **Add button**, and **Duplicate** any action button. The movement stick can
-  be hidden/restored. **Reset** restores original positions, visibility and
-  sizes and removes all copies, after confirmation.
-  Edit size lists all controls, including hidden buttons and copies, with
-  **Ã¢Ë†â€™**, **+** and a percentage value (50Ã¢â‚¬â€œ200%, in 10-point steps). Drawing,
-  hit areas and the movement stick range resize together. Copies inherit the
-  source size and can then be resized independently.
-- **Look sensitivity**: adjust the slider from 0.25x to 4x. This setting and
-  the layout are saved in private app preferences and restored next launch.
-- **Cheats**: all ten built-in cheat flags and six cheat actions from Halo CE,
-  including the prototype init.txt / cheats.txt commands. Toggle rows become
-  green only after the game applies the change; tap again to disable them.
-  Instant actions (weapons, powerups, vehicles, camouflage, teleport) can be
-  repeated and keep their neutral background, since they are not switches.
-  Only enabled toggle cheats have a green row. Available spawned objects
-  depend on the current map.
-  Controller cheats use prototype button shortcuts when no cheats.txt is installed.
-  Cheats require an active player; network clients follow the host's existing rules.
+Porting screens use a full-screen native blue UI bitmap and text enlarged to 160% of the
+map's large UI font, with four settings per list page and 44-pixel touch
+rows in the 640x480 UI space. The pause-menu section shortcuts use 125%
+text. Standalone labels use an explicit alpha so main-menu tags whose
+original text alpha is zero remain visible outside their plasma pass.
+Labels use the original text-box renderer with an independent visible instance;
+scaling is scoped to glyph vertices and resets after each label. The blue UI
+bitmap is selected from the current map and fills the entire widescreen area.
 
-The version 2 `.halolayout` format saves all these settings. Version 1 files
-remain supported, with default sizes, Rumble on and Gyroscope off. Positions
-use display-relative coordinates while button circles keep their proportions.
-Clearing app data also clears touch and General settings. Test gyro response
-and phone rumble on actual Android hardware before relying on them.
+- **Overlay settings** contains **Edit buttons layout**, **Hide or add
+  buttons**, **Edit buttons size** and **Look sensitivity**. Layout editing
+  shows the controls for dragging while keeping the current game menu open
+  and the campaign paused. Tap **Save and exit** to return to Overlay settings.
+  **Export** and **Import** retain Android's document picker. The button
+  manager lets you hide/show, duplicate and add buttons, including restoring
+  the movement stick. Reset requires confirmation. Size sliders range from
+  50% to 200%; look sensitivity ranges from 0.25x to 4x. Lists use touchable
+  Previous/Next page actions when necessary.
+- **Hardware** contains **Rumble**, **Gyroscope**, **Gyroscope sensitivity**
+  and **FPS counter**. Unsupported hardware is marked unavailable. Rumble
+  defaults on, gyro and FPS default off. Gyro sensitivity has its own
+  horizontal slider from 0.25x to 4x, independent of swipe look sensitivity.
+  Gyro handles both landscape orientations. FPS measures presented game
+  frames over half-second intervals and displays during gameplay.
+- **Cheats** retains all ten engine flags and six instant actions. Enabled
+  flags have green rows; instant actions remain repeatable. Requests and
+  displayed states follow the existing engine acknowledgement path. Cheats
+  require an active player; network clients retain the host's existing rules.
+  Available spawned objects depend on the current map.
+
+Version 3 `.halolayout` files also preserve gyro sensitivity and the FPS
+preference. Version 1 and 2 layouts remain supported; their gyro sensitivity
+defaults to 1x and FPS to off. Version 1 retains its default button sizes,
+Rumble on and Gyroscope off. Clearing app data clears the saved settings.
+
+Validation: `python tools/test_touch_layout.py` checks persistence, legacy
+imports, invalid settings and gyro integration/orientation. `ninja android`
+and `ninja android_apk` compile the native renderer/input bridge and app.
+Visual layout, taps on imported map variants, phone rumble and sensor
+response must also be checked on an Android device.
+`python tools/test_porting_ui.py` executes the actual text-box/porting functions
+with a recording renderer to check zero-alpha/faded template visibility,
+enlarged row dispatch and full-screen native bitmap selection. It requires
+the Windows Android NDK and Node; it does not validate GPU presentation.
 
 ## Settings
 

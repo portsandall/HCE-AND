@@ -62,7 +62,7 @@ public final class TouchLayoutTest {
         check(wide.add(4) == 4 && wide.shown(4), "Add must restore a hidden button first");
         wide.setShown(TouchLayout.LEFT, false);
         check(wide.add(TouchLayout.LEFT) == TouchLayout.LEFT, "Hidden move stick must be restorable");
-        reject(exported.replace("version=2", "version=9"));
+        reject(exported.replace("version=3", "version=9"));
         reject(exported.replace("control.18.type=4", "control.18.type=16"));
         reject(exported.replace("control.18.x=240.0", "control.18.x=NaN"));
         reject(exported.replace("count=19", "count=10000"));
@@ -86,7 +86,20 @@ public final class TouchLayoutTest {
         reject(sizedText.replace("control.18.size=1.6", "control.18.size=3.0"));
         reject(sizedText.replace("rumble=false", "rumble=invalid"));
         reject(sizedText.replace("gyroscope=true", "gyroscope=invalid"));
-        String legacy = sizedText.replace("version=2", "version=1").replaceAll("(?m)^.*\\.size=.*\\R", "")
+        wide.gyroscopeSensitivity = 3.75f; wide.fpsCounter = true;
+        String version3 = wide.exportConfiguration(2.25f);
+        TouchLayout.Configuration hardware = TouchLayout.importConfiguration(version3);
+        check(hardware.layout.gyroscopeSensitivity == 3.75f && hardware.layout.fpsCounter,
+              "Version 3 must preserve independent gyro sensitivity and FPS preference");
+        reject(version3.replace("gyroscope-sensitivity=3.75", "gyroscope-sensitivity=NaN"));
+        reject(version3.replace("gyroscope-sensitivity=3.75", "gyroscope-sensitivity=4.01"));
+        reject(version3.replace("fps-counter=true", "fps-counter=invalid"));
+        TouchLayout.Configuration version2 = TouchLayout.importConfiguration(version3.replace("version=3", "version=2")
+            .replaceAll("(?m)^(gyroscope-sensitivity|fps-counter)=.*\\R", ""));
+        check(version2.layout.gyroscopeEnabled && !version2.layout.rumbleEnabled &&
+              version2.layout.gyroscopeSensitivity == 1 && !version2.layout.fpsCounter,
+              "Version 2 must retain hardware toggles and default the new settings");
+        String legacy = sizedText.replace("version=3", "version=1").replaceAll("(?m)^.*\\.size=.*\\R", "")
             .replaceAll("(?m)^(rumble|gyroscope)=.*\\R", "");
         TouchLayout.Configuration old = TouchLayout.importConfiguration(legacy);
         check(old.layout.sizeScale(copy) == 1 && old.layout.rumbleEnabled && !old.layout.gyroscopeEnabled,

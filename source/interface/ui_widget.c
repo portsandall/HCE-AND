@@ -5590,6 +5590,8 @@ static boolean ui_mouse_menus_active(
 	return virtual_keyboard_active() || ui_mouse_menu() != NULL;
 }
 
+#include "ui_widget_porting.h"
+
 /* the pointer's motion, clicks and wheel since the last frame, as the first
 player's controller events */
 static void ui_widgets_process_mouse(
@@ -5599,15 +5601,33 @@ static void ui_widgets_process_mouse(
 	struct ui_mouse_target *target;
 	short controller_index = 0;
 
-	if (!halo_ui_pointer_update(ui_mouse_menus_active(), &pointer) ||
-		virtual_keyboard_active())
+#ifdef HALO_ANDROID
+	ui_porting_prepare();
+#endif
+	if (!halo_ui_pointer_update(ui_mouse_menus_active(), &pointer))
 	{
 		ui_mouse_press_count = 0;
 		ui_mouse_hover_pending = FALSE;
 		ui_mouse_click_pending = FALSE;
 	}
+	else if (virtual_keyboard_active())
+	{
+#ifdef HALO_ANDROID
+        virtual_keyboard_touch(pointer.click_x, pointer.click_y, pointer.left_clicks, pointer.right_clicks);
+#endif
+        ui_mouse_press_count = 0;
+        ui_mouse_hover_pending = ui_mouse_click_pending = FALSE;
+    }
 	else
 	{
+#ifdef HALO_ANDROID
+        if (ui_porting_pointer(&pointer)) {
+            ui_mouse_press_count = 0;
+            ui_mouse_hover_pending = ui_mouse_click_pending = FALSE;
+            ui_mouse_target_count = 0;
+            return;
+        }
+#endif
 		if (pointer.moved)
 		{
 			ui_mouse_hover_pending = TRUE;
@@ -5725,6 +5745,9 @@ static void widget_instance_render_recursive(
 	long input_index;
 	struct widget_instance *child;
 	struct bitmap_data *bitmap;
+#ifdef HALO_ANDROID
+    struct ui_widget_definition adjusted_definition;
+#endif
 
 	if (!use_nifty_plasma_fx &&
 		TEST_FLAG(definition->flags, _widget_always_render_with_nifty_fx_bit))
@@ -5733,6 +5756,9 @@ static void widget_instance_render_recursive(
 	}
 	offset.x += widget->horizontal_offset;
 	offset.y += widget->vertical_offset;
+#ifdef HALO_ANDROID
+    if (!ui_porting_adjust_widget(widget, &definition, &adjusted_definition, &offset)) return;
+#endif
 	for (input_index = 0;
 		input_index < definition->game_data_inputs.count;
 		input_index++)
@@ -5746,6 +5772,10 @@ static void widget_instance_render_recursive(
 	}
 	if (!widget->visible)
 		return;
+#ifdef HALO_ANDROID
+    if (ui_porting_context && (ui_porting_menu.page || ui_porting_menu.editing) &&
+        ui_mouse_widget_is_item(widget)) return;
+#endif
 	ui_mouse_note_target(widget, definition, offset);
 	bitmap = bitmap_group_get_bitmap_from_sequence(
 		definition->background_bitmap.index,
@@ -6042,6 +6072,9 @@ void render_ui_widgets(
 					TRUE,
 					FALSE);
 				ui_mouse_noting_targets = FALSE;
+#ifdef HALO_ANDROID
+                ui_porting_render(widget, &bounds);
+#endif
 				if (widget_globals.debug_show_path)
 				{
 					real_argb_color color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -6266,6 +6299,15 @@ static void widget_instance_process_one_event_recursive(
 {
 	boolean event_handled = FALSE;
 	boolean widget_deleted = FALSE;
+#ifdef HALO_ANDROID
+    if (!widget->parent && ui_porting_context && ui_porting_menu.page) {
+        *return_widget_deleted = FALSE;
+        if (event->type == _event_type_button && event->data.button.value == 1 &&
+            event->data.button.index == _widget_event_b_button)
+            host_porting_action(ui_porting_menu.revision, 90, 0);
+        return;
+    }
+#endif
 	boolean event_for_this_widget = widget->local_player_index == NONE ||
 		widget->local_player_index == event->controller_index;
 	long audio_feedback = _ui_audio_feedback_none;

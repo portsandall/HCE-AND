@@ -1,6 +1,5 @@
 package com.halo.decomp;
 
-import android.app.AlertDialog;
 import android.media.AudioAttributes;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -11,13 +10,7 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
-import android.view.WindowManager;
-import android.widget.Switch;
 import android.content.Context;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.SeekBar;
-import android.widget.TextView;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -25,6 +18,7 @@ import android.graphics.Paint;
 import android.util.SparseIntArray;
 import android.util.SparseArray;
 import android.view.MotionEvent;
+import android.view.WindowManager;
 import android.view.View;
 import android.widget.Toast;
 
@@ -68,7 +62,7 @@ public final class TouchControls extends View implements SensorEventListener {
     private final int[] axes = new int[6];
     private TouchLayout layout = new TouchLayout();
     private final SharedPreferences preferences;
-    private boolean editing, optionsOpen;
+    private boolean editing;
     private final SensorManager sensors;
     private final Sensor gyroscope;
     private final Vibrator vibrator;
@@ -83,7 +77,7 @@ public final class TouchControls extends View implements SensorEventListener {
     private final Runnable rumblePoll = new Runnable() {
         public void run() {
             if (!deviceInputActive) return;
-            int amplitude = layout.rumbleEnabled && !editing && !optionsOpen ? nativeRumble() : 0;
+            int amplitude = layout.rumbleEnabled && !editing && !menusActive ? nativeRumble() : 0;
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (amplitude == 0) cancelRumble();
                 else if (amplitude != lastAmplitude || SystemClock.uptimeMillis()-lastVibration >= 70) {
@@ -187,7 +181,7 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private void publish() {
-        if (editing || optionsOpen) {
+        if (editing || menusActive) {
             nativeState(0, 0, 0, 0, 0, 0, 0);
             return;
         }
@@ -212,7 +206,7 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private int hit(float x, float y) {
-        if (inside(x, y, optionsX(), toolbarY(), 34)) return EDIT;
+        if (editing && inside(x, y, optionsX(), toolbarY(), 34)) return EDIT;
         if (editing && inside(x, y, optionsX()-156, toolbarY(), 34)) return EXPORT;
         if (editing && inside(x, y, optionsX()-78, toolbarY(), 34)) return IMPORT;
         if (inside(x, y, logicalWidth/2, toolbarY(), 28)) return TOGGLE;
@@ -242,10 +236,17 @@ public final class TouchControls extends View implements SensorEventListener {
         int id = event.getPointerId(index);
         float x = (event.getX(index)-offsetX)/scale, y = (event.getY(index)-offsetY)/scale;
         if (editing) return editTouch(event, action, index, id, x, y);
+        if (menusActive) {
+            if (event.getPointerId(index) == event.getPointerId(0) &&
+                    (action == MotionEvent.ACTION_UP ||
+                    (action == MotionEvent.ACTION_MOVE && (menuPage == 4 || menuPage == 5 || menuPage == 12))))
+                nativeMenuPointer(event.getX(0)/getWidth(), event.getY(0)/getHeight(), true, false);
+            return true;
+        }
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             int control = hit(x, y);
             if (control == EDIT) {
-                showOptions(); performClick();
+                return true;
             } else if (control == TOGGLE) {
                 reset(); visible = !visible; performClick();
             } else if (control != Integer.MIN_VALUE) {
@@ -298,7 +299,7 @@ public final class TouchControls extends View implements SensorEventListener {
                 int control = hit(x, y);
                 if (control == EDIT) {
                     if (saveLayout()) {
-                        reset(); editing = false; performClick();
+                        reset(); editing = false; menuPage = 2; publishMenu(); updateSensors(); performClick();
                     }
                 } else if (control == EXPORT || control == IMPORT) {
                     reset();
@@ -325,7 +326,7 @@ public final class TouchControls extends View implements SensorEventListener {
     private float optionsX() { return logicalWidth-Math.max(42, insetRight/scale+42); }
 
     private void editorButton(Canvas canvas) {
-        circle(canvas, optionsX(), toolbarY(), 34, editing ? "Save" : "Options", false);
+        if (editing) circle(canvas, optionsX(), toolbarY(), 34, "Save", false);
         if (editing) {
             circle(canvas, optionsX()-156, toolbarY(), 34, "Export", false);
             circle(canvas, optionsX()-78, toolbarY(), 34, "Import", false);
@@ -336,17 +337,147 @@ public final class TouchControls extends View implements SensorEventListener {
         }
     }
 
-    private void showOptions() {
-        optionsOpen = true; reset();
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Options")
-            .setItems(new String[]{"General", "Edit buttons layout", "Look sensitivity", "Cheats"}, (d, which) -> {
-                if (which == 0) post(this::showGeneral);
-                else if (which == 1) { editing = true; visible = true; invalidate(); }
-                else if (which == 2) post(this::showSensitivity);
-                else post(this::showCheats);
-            }).setNegativeButton("Close", null).create();
-        dialog.setOnDismissListener(d -> { optionsOpen = false; reset(); });
-        dialog.show();
+
+    private boolean menusActive = true;
+    private int menuContext, menuPage, menuOffset, selectedControl, revision, currentFps;
+    private static final int MENU_PAGE_SIZE = 4;
+    private static native int[] nativeMenuPoll();
+    private static native void nativeMenuPointer(float x, float y, boolean click, boolean back);
+    private static native void nativeMenuPublish(int revision, int page, boolean editing,
+        String title, String[] labels, int[] actions, int[] values);
+    private static final String[] CHEATS = {"Invincibility", "Jetpack", "Infinite ammo", "Bump possession",
+        "Super jump", "Reflexive damage", "Medusa", "Omnipotent", "Controller cheats", "Bottomless clip",
+        "Active camouflage (local player)", "Active camouflage", "All powerups", "All vehicles",
+        "All weapons", "Teleport to camera"};
+    private final Runnable menuPoll = new Runnable() {
+        public void run() {
+            if (!deviceInputActive) return;
+            int[] state = nativeMenuPoll();
+            if (state != null) {
+                boolean active = state[0] != 0;
+                if (active != menusActive || menuContext != state[1]) {
+                    menusActive = active; menuContext = state[1];
+                    menuPage = menuOffset = 0; editing = false;
+                    reset(); cancelRumble(); updateSensors(); revision++; publishMenu();
+                }
+                if (state[2] != 0 && state[4] == revision) applyMenuAction(state[2], state[3]);
+                currentFps = state[5];
+                if (menuPage == 6) publishMenu();
+                invalidate();
+            }
+            postDelayed(this, 16);
+        }
+    };
+
+    public boolean menuBack() {
+        if (!menusActive) return false;
+        if (editing) {
+            if (saveLayout()) {
+                editing = false; menuPage = 2; revision++; publishMenu(); invalidate();
+            }
+        }
+        else nativeMenuPointer(0, 0, false, true);
+        return true;
+    }
+
+    private void applyMenuAction(int action, int value) {
+        if (action >= 3000) {
+            int id = action-3000, status = nativeCheatStatus(id);
+            if (status != -2) nativeCheatRequest(id, id >= 10 || status != 1);
+        } else if (action >= 2000) {
+            if (layout.add(action-2000) < 0)
+                Toast.makeText(getContext(), "Control limit reached or movement stick already visible.", Toast.LENGTH_SHORT).show();
+            else saveLayout();
+            menuPage = 7; menuOffset = 0;
+        } else if (action >= 1000) {
+            selectedControl = action-1000; menuPage = menuPage == 8 ? 12 : 9;
+        } else if (action == 90) {
+            if (menuPage == 1 || (menuContext == 2 && (menuPage == 2 || menuPage == 3 || menuPage == 6))) menuPage = 0;
+            else if (menuPage == 2 || menuPage == 3 || menuPage == 6) menuPage = 1;
+            else if (menuPage == 5) menuPage = 3;
+            else if (menuPage == 9 || menuPage == 10 || menuPage == 11) menuPage = 7;
+            else if (menuPage == 12) menuPage = 8;
+            else menuPage = 2;
+            menuOffset = 0;
+        } else if (action == 91 || action == 92) menuOffset += action == 91 ? MENU_PAGE_SIZE : -MENU_PAGE_SIZE;
+        else if (action == 12) { editing = true; visible = true; reset(); updateSensors(); }
+        else if (action == 20) { layout.setShown(selectedControl, !layout.shown(selectedControl)); saveLayout(); }
+        else if (action == 21) {
+            if (layout.duplicate(selectedControl) < 0)
+                Toast.makeText(getContext(), "Maximum 64 controls.", Toast.LENGTH_SHORT).show();
+            else saveLayout();
+        } else if (action == 22) { layout.resetDefaults(); saveLayout(); menuPage = 7; menuOffset = 0; }
+        else if (action == 30) { layout.rumbleEnabled = !layout.rumbleEnabled; cancelRumble(); saveLayout(); }
+        else if (action == 31) { layout.gyroscopeEnabled = !layout.gyroscopeEnabled; updateSensors(); saveLayout(); }
+        else if (action == 32) { layout.fpsCounter = !layout.fpsCounter; saveLayout(); }
+        else if (action == 40 || action == 41) {
+            float amount = 0.25f+Math.max(0, Math.min(1000, value))*3.75f/1000;
+            if (action == 40) sensitivity = amount; else layout.gyroscopeSensitivity = amount;
+            saveLayout();
+        } else if (action == 42) {
+            layout.setSize(selectedControl, 0.5f+Math.max(0, Math.min(1000, value))*1.5f/1000); saveLayout();
+        } else { menuPage = action; menuOffset = 0; }
+        revision++; publishMenu(); invalidate();
+    }
+
+    private void publishMenu() {
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> actions = new java.util.ArrayList<>(), values = new java.util.ArrayList<>();
+        java.util.function.BiConsumer<String, Integer> row = (text, id) -> {
+            labels.add(text); actions.add(id); values.add(-1);
+        };
+        String title = "Porting options";
+        if (menuPage == 1) {
+            row.accept("Overlay settings", 2); row.accept("Hardware", 3); row.accept("Cheats", 6);
+        } else if (menuPage == 2) {
+            title = "Overlay settings";
+            row.accept("Edit buttons layout", 12); row.accept("Hide or add buttons", 7);
+            row.accept("Edit buttons size", 8); row.accept("Look sensitivity", 4);
+        } else if (menuPage == 3) {
+            title = "Hardware";
+            row.accept("Rumble: "+(vibrator == null || !vibrator.hasVibrator() ? "unavailable" : layout.rumbleEnabled ? "ON" : "OFF"),
+                vibrator == null || !vibrator.hasVibrator() ? 0 : 30);
+            row.accept("Gyroscope: "+(gyroscope == null ? "unavailable" : layout.gyroscopeEnabled ? "ON" : "OFF"), gyroscope == null ? 0 : 31);
+            row.accept("Gyroscope sensitivity", 5); row.accept("FPS counter: "+(layout.fpsCounter ? "ON" : "OFF"), 32);
+        } else if (menuPage == 4 || menuPage == 5 || menuPage == 12) {
+            boolean size = menuPage == 12;
+            title = size ? "Edit buttons size" : menuPage == 4 ? "Look sensitivity" : "Gyroscope sensitivity";
+            float amount = size ? layout.sizeScale(selectedControl) : menuPage == 4 ? sensitivity : layout.gyroscopeSensitivity;
+            row.accept(String.format(java.util.Locale.US, size ? "%s: %.0f%%" : "%s: %.2fx",
+                size ? controlName(layout.type(selectedControl)) : title, size ? amount*100 : amount), size ? 42 : menuPage == 4 ? 40 : 41);
+            values.set(0, Math.round((amount-(size ? 0.5f : 0.25f))/(size ? 1.5f : 3.75f)*1000));
+        } else if (menuPage == 6) {
+            title = "Cheats";
+            for (int i = menuOffset; i < Math.min(CHEATS.length, menuOffset+MENU_PAGE_SIZE); i++) {
+                int status = nativeCheatStatus(i);
+                row.accept(CHEATS[i]+(status == -2 ? " ..." : status == -1 ? " (unavailable)" : i < 10 ? status == 1 ? " [ON]" : " [OFF]" : " (instant)"), 3000+i);
+            }
+        } else if (menuPage == 7 || menuPage == 8) {
+            title = menuPage == 7 ? "Hide or add buttons" : "Edit buttons size";
+            for (int i = menuOffset; i < Math.min(layout.size(), menuOffset+MENU_PAGE_SIZE); i++)
+                row.accept(controlName(layout.type(i))+(i >= TouchLayout.BASE_COUNT ? " #"+(i+1) : "")+
+                    (menuPage == 7 ? layout.shown(i) ? " [visible]" : " [hidden]" : " "+Math.round(layout.sizeScale(i)*100)+"%"), 1000+i);
+        } else if (menuPage == 9) {
+            title = controlName(layout.type(selectedControl));
+            row.accept(layout.shown(selectedControl) ? "Hide button" : "Show button", 20);
+            if (layout.type(selectedControl) != LEFT) row.accept("Duplicate button", 21);
+            row.accept("Add button", 10); row.accept("Reset all buttons", 11);
+        } else if (menuPage == 10) {
+            title = "Add button";
+            for (int i = menuOffset; i < Math.min(TouchLayout.BASE_COUNT, menuOffset+MENU_PAGE_SIZE); i++) row.accept(controlName(i), 2000+i);
+        } else if (menuPage == 11) {
+            title = "Restore defaults and remove copies?"; row.accept("Reset all buttons", 22);
+        }
+        if (menuPage == 6 || menuPage == 7 || menuPage == 8 || menuPage == 10) {
+            int count = menuPage == 6 ? CHEATS.length : menuPage == 10 ? TouchLayout.BASE_COUNT : layout.size();
+            if (menuOffset > 0) row.accept("Previous page", 92);
+            if (menuOffset+MENU_PAGE_SIZE < count) row.accept("Next page", 91);
+        }
+        if (menuPage != 0) row.accept("Back", 90);
+        int[] ids = new int[actions.size()], progress = new int[values.size()];
+        for (int i = 0; i < ids.length; i++) { ids[i] = actions.get(i); progress[i] = values.get(i); }
+        // Keep the revision stable for status refreshes so pending taps remain valid.
+        nativeMenuPublish(revision, menuPage, editing, title, labels.toArray(new String[0]), ids, progress);
     }
 
     private boolean saveLayout() {
@@ -375,16 +506,16 @@ public final class TouchControls extends View implements SensorEventListener {
     public void startDeviceInput() {
         if (deviceInputActive) return;
         deviceInputActive = true;
-        gyroAim.reset(); updateSensors(); post(rumblePoll);
+        gyroAim.reset(); updateSensors(); post(rumblePoll); post(menuPoll);
     }
 
     public void stopDeviceInput() {
-        deviceInputActive = false; removeCallbacks(rumblePoll);
+        deviceInputActive = false; removeCallbacks(rumblePoll); removeCallbacks(menuPoll);
         updateSensors(); cancelRumble(); reset();
     }
 
     private void updateSensors() {
-        boolean needed = deviceInputActive && layout.gyroscopeEnabled && gyroscope != null;
+        boolean needed = deviceInputActive && !menusActive && !editing && layout.gyroscopeEnabled && gyroscope != null;
         if (needed && !gyroRegistered) {
             gyroAim.reset();
             gyroRegistered = sensors.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
@@ -401,207 +532,17 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     @Override public void onSensorChanged(SensorEvent event) {
-        if (!deviceInputActive || !layout.gyroscopeEnabled || editing || optionsOpen) {
+        if (!deviceInputActive || !layout.gyroscopeEnabled || editing || menusActive) {
             gyroAim.reset(); return;
         }
         int rotation = ((WindowManager)getContext().getSystemService(Context.WINDOW_SERVICE))
             .getDefaultDisplay().getRotation();
         if (gyroAim.sample(event.timestamp, event.values[0], event.values[1], rotation, gyroDelta))
             // The existing direct-look path accepts logical pixels (0.0022 radians per pixel).
-            nativeLook(-gyroDelta[0]/0.0022f*sensitivity, -gyroDelta[1]/0.0022f*sensitivity);
+            nativeLook(-gyroDelta[0]/0.0022f*layout.gyroscopeSensitivity, -gyroDelta[1]/0.0022f*layout.gyroscopeSensitivity);
     }
 
     @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-
-    private void showGeneral() {
-        optionsOpen = true; reset(); cancelRumble();
-        LinearLayout panel = new LinearLayout(getContext()); panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(24, 16, 24, 16);
-        Switch rumble = new Switch(getContext());
-        boolean hasRumble = vibrator != null && vibrator.hasVibrator();
-        rumble.setText(hasRumble ? "Rumble" : "Rumble (unavailable on this phone)");
-        rumble.setChecked(layout.rumbleEnabled); rumble.setEnabled(hasRumble);
-        rumble.setOnCheckedChangeListener((button, enabled) -> {
-            layout.rumbleEnabled = enabled; cancelRumble(); saveLayout();
-        });
-        Switch gyro = new Switch(getContext());
-        gyro.setText("Gyroscope aim (Experimental)"+(gyroscope == null ? " - unavailable on this phone" : ""));
-        gyro.setChecked(layout.gyroscopeEnabled); gyro.setEnabled(gyroscope != null);
-        gyro.setOnCheckedChangeListener((button, enabled) -> {
-            layout.gyroscopeEnabled = enabled; reset(); updateSensors(); saveLayout();
-        });
-        panel.addView(rumble); panel.addView(gyro);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("General")
-            .setView(panel).setPositiveButton("Done", null).create();
-        android.widget.Button manage = new android.widget.Button(getContext());
-        manage.setText("Hide or add buttons");
-        manage.setOnClickListener(v -> { dialog.dismiss(); post(this::showButtonManager); });
-        panel.addView(manage);
-        android.widget.Button sizes = new android.widget.Button(getContext());
-        sizes.setText("Edit buttons size");
-        sizes.setOnClickListener(v -> { dialog.dismiss(); post(this::showButtonSizes); });
-        panel.addView(sizes);
-        dialog.setOnDismissListener(d -> { optionsOpen = false; reset(); updateSensors(); }); dialog.show();
-    }
-
-    private void showButtonSizes() {
-        optionsOpen = true; reset();
-        LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
-        for (int i = 0; i < layout.size(); i++) {
-            final int control = i;
-            LinearLayout row = new LinearLayout(getContext()); row.setPadding(16, 4, 16, 4);
-            TextView label = new TextView(getContext()); label.setTextColor(Color.WHITE);
-            label.setText(controlName(layout.type(i))+(i >= TouchLayout.BASE_COUNT ? " (copy)" : "")
-                +(!layout.shown(i) ? " (hidden)" : ""));
-            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-            android.widget.Button minus = new android.widget.Button(getContext()); minus.setText("-");
-            TextView value = new TextView(getContext()); value.setTextColor(Color.WHITE);
-            android.widget.Button plus = new android.widget.Button(getContext()); plus.setText("+");
-            Runnable refresh = () -> {
-                int percent = Math.round(layout.sizeScale(control)*100);
-                value.setText(percent+"%"); minus.setEnabled(percent > 50); plus.setEnabled(percent < 200);
-            };
-            minus.setOnClickListener(v -> {
-                layout.setSize(control, Math.max(50, Math.round(layout.sizeScale(control)*100)-10)/100f);
-                saveLayout(); refresh.run(); invalidate();
-            });
-            plus.setOnClickListener(v -> {
-                layout.setSize(control, Math.min(200, Math.round(layout.sizeScale(control)*100)+10)/100f);
-                saveLayout(); refresh.run(); invalidate();
-            });
-            row.addView(minus); row.addView(value); row.addView(plus);
-            list.addView(row); refresh.run();
-        }
-        ScrollView scroll = new ScrollView(getContext()); scroll.addView(list);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Edit buttons size")
-            .setView(scroll).setPositiveButton("Done", null).create();
-        dialog.setOnDismissListener(d -> { optionsOpen = false; reset(); }); dialog.show();
-    }
-
-    private void showButtonManager() {
-        optionsOpen = true; reset();
-        LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
-        Runnable[] refresh = new Runnable[1];
-        refresh[0] = () -> {
-            list.removeAllViews();
-            for (int i = 0; i < layout.size(); i++) {
-                final int control = i;
-                LinearLayout row = new LinearLayout(getContext()); row.setPadding(16, 4, 16, 4);
-                TextView label = new TextView(getContext()); label.setTextColor(Color.WHITE);
-                label.setText(controlName(layout.type(i))+(i >= TouchLayout.BASE_COUNT ? " (copy)" : ""));
-                row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-                android.widget.Button toggle = new android.widget.Button(getContext());
-                toggle.setText(layout.shown(i) ? "Hide" : "Show");
-                toggle.setOnClickListener(v -> {
-                    reset(); layout.setShown(control, !layout.shown(control));
-                    saveLayout(); refresh[0].run(); invalidate();
-                });
-                row.addView(toggle);
-                if (layout.type(i) != LEFT) {
-                    android.widget.Button copy = new android.widget.Button(getContext()); copy.setText("Duplicate");
-                    copy.setOnClickListener(v -> {
-                        reset();
-                        if (layout.duplicate(control) < 0)
-                            Toast.makeText(getContext(), "Maximum 64 controls. Reset to remove copies.", Toast.LENGTH_LONG).show();
-                        else saveLayout();
-                        refresh[0].run(); invalidate();
-                    });
-                    row.addView(copy);
-                }
-                list.addView(row);
-            }
-        };
-        refresh[0].run();
-        ScrollView scroll = new ScrollView(getContext()); scroll.addView(list);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Hide or add buttons")
-            .setView(scroll).setPositiveButton("Done", null).setNegativeButton("Reset", null)
-            .setNeutralButton("Add button", null).create();
-        dialog.setOnDismissListener(d -> { optionsOpen = false; reset(); });
-        dialog.show();
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
-            new AlertDialog.Builder(getContext()).setTitle("Reset buttons?")
-                .setMessage("Restore original positions, show all default controls and remove duplicates?")
-                .setNegativeButton("Cancel", null).setPositiveButton("Reset", (d, which) -> {
-                    reset(); layout.resetDefaults(); visible = true; saveLayout();
-                    refresh[0].run(); invalidate();
-                }).show();
-        });
-        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-            String[] names = new String[TouchLayout.BASE_COUNT];
-            for (int i = 0; i < names.length; i++) names[i] = controlName(i);
-            new AlertDialog.Builder(getContext()).setTitle("Add button").setItems(names, (d, type) -> {
-                reset();
-                if (layout.add(type) < 0)
-                    Toast.makeText(getContext(), type == LEFT ? "Move stick is already visible." : "Maximum 64 controls.", Toast.LENGTH_LONG).show();
-                else saveLayout();
-                refresh[0].run(); invalidate();
-            }).setNegativeButton("Cancel", null).show();
-        });
-    }
-
-    private void showSensitivity() {
-        optionsOpen = true; reset();
-        LinearLayout panel = new LinearLayout(getContext()); panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(32, 16, 32, 16);
-        TextView value = new TextView(getContext());
-        SeekBar slider = new SeekBar(getContext()); slider.setMax(150);
-        slider.setProgress(Math.round((sensitivity-0.25f)/0.025f));
-        value.setText(String.format(java.util.Locale.US, "Look sensitivity: %.2fx", sensitivity));
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sensitivity = 0.25f+progress*0.025f;
-                value.setText(String.format(java.util.Locale.US, "Look sensitivity: %.2fx", sensitivity));
-                saveLayout();
-            }
-            public void onStartTrackingTouch(SeekBar bar) {}
-            public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        panel.addView(value); panel.addView(slider);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Look sensitivity")
-            .setView(panel).setPositiveButton("Done", null).create();
-        dialog.setOnDismissListener(d -> { optionsOpen = false; reset(); }); dialog.show();
-    }
-
-    private void showCheats() {
-        optionsOpen = true; reset();
-        String[] names = {"Invincibility", "Jetpack", "Infinite ammo", "Bump possession",
-            "Super jump", "Reflexive damage", "Medusa", "Omnipotent", "Controller cheats",
-            "Bottomless clip", "Active camouflage (local player)", "Active camouflage",
-            "All powerups", "All vehicles", "All weapons", "Teleport to camera"};
-        LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
-        TextView[] rows = new TextView[names.length];
-        int[] previous = new int[names.length]; java.util.Arrays.fill(previous, Integer.MIN_VALUE);
-        for (int i = 0; i < names.length; i++) {
-            final int id = i;
-            TextView row = rows[i] = new TextView(getContext());
-            row.setTextColor(Color.WHITE); row.setTextSize(17); row.setPadding(24, 16, 24, 16);
-            row.setOnClickListener(v -> {
-                int status = nativeCheatStatus(id);
-                if (status != -2) nativeCheatRequest(id, id >= 10 || status != 1);
-            });
-            list.addView(row);
-        }
-        ScrollView scroll = new ScrollView(getContext()); scroll.addView(list);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Cheats")
-            .setView(scroll).setPositiveButton("Done", null).create();
-        Runnable refresh = new Runnable() {
-            public void run() {
-                if (!dialog.isShowing()) return;
-                for (int i = 0; i < rows.length; i++) {
-                    int status = nativeCheatStatus(i);
-                    rows[i].setText(names[i]+(status == -2 ? " ..." : i < 10 && status == 1 ? " [ON]" : "")
-                        +(i >= 10 ? " (instant)" : ""));
-                    rows[i].setBackgroundColor(i < 10 && status == 1 ? 0xff267447 : 0xff303e4a);
-                    if (status == -1 && previous[i] != -1)
-                        Toast.makeText(getContext(), "Cheat unavailable: enter a game you host with an active player.", Toast.LENGTH_LONG).show();
-                    previous[i] = status;
-                }
-                postDelayed(this, 100);
-            }
-        };
-        dialog.setOnDismissListener(d -> { removeCallbacks(refresh); optionsOpen = false; reset(); });
-        dialog.show(); refresh.run();
-    }
 
     private void circle(Canvas canvas, float x, float y, float radius, String label, boolean active) {
         circle(canvas, x, y, radius, label, active, 11);
@@ -626,6 +567,12 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     @Override protected void onDraw(Canvas canvas) {
+        if (layout.fpsCounter && !menusActive && !editing) {
+            paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
+            paint.setTextAlign(Paint.Align.LEFT); paint.setTextSize(18*scale);
+            canvas.drawText("FPS: "+currentFps, insetLeft+12*scale, insetTop+24*scale, paint);
+        }
+        if (menusActive && !editing) return;
         canvas.save(); canvas.translate(offsetX, offsetY); canvas.scale(scale, scale);
         if (!editing) circle(canvas, logicalWidth/2, toolbarY(), 28, visible ? "Hide" : "Touch", false);
         if (visible) {

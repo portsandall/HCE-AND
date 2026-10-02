@@ -125,6 +125,11 @@ public class HaloActivity extends SDLActivity {
             .setPositiveButton("OK", null).show();
     }
 
+    @Override public void onBackPressed() {
+        if (touchControls != null && touchControls.menuBack()) return;
+        super.onBackPressed();
+    }
+
     @Override protected void onResume() {
         super.onResume();
         if (touchControls != null && getWindow().getDecorView().hasWindowFocus())

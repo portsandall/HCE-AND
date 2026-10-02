@@ -79,6 +79,24 @@ symbols in this file:
 
 /* ---------- constants */
 
+#ifdef HALO_ANDROID
+static real porting_text_scale = 1.0f;
+static short porting_text_x, porting_text_y;
+static void porting_draw_character(struct dynamic_screen_vertex *vertices)
+{
+    long i;
+    for (i = 0; i < NUMBER_OF_VERTICES_PER_QUADRILATERAL; ++i) {
+        vertices[i].position.x = porting_text_x +
+            (vertices[i].position.x-porting_text_x)*porting_text_scale;
+        vertices[i].position.y = porting_text_y +
+            (vertices[i].position.y-porting_text_y)*porting_text_scale;
+    }
+    rasterizer_text_draw_character(vertices);
+}
+#else
+#define porting_draw_character rasterizer_text_draw_character
+#endif
+
 enum
 {
 	HARDWARE_CHARACTER_CACHE_BITMAP_WIDTH = 128,
@@ -330,7 +348,7 @@ rasterizer_draw_character(
 		vertices[0].texture_coordinates.y = vertices[1].texture_coordinates.y = (real)v0;
 		vertices[2].texture_coordinates.y = vertices[3].texture_coordinates.y = (real)(v0 + dy);
 
-		rasterizer_text_draw_character(vertices);
+		porting_draw_character(vertices);
 	}
 
 	return;
@@ -581,7 +599,7 @@ rasterizer_draw_character_with_dropshadow(
 			vertices[0].texture_coordinates.y = vertices[1].texture_coordinates.y = (real)v0;
 			vertices[2].texture_coordinates.y = vertices[3].texture_coordinates.y = (real)(v0 + dy);
 
-			rasterizer_text_draw_character(vertices);
+			porting_draw_character(vertices);
 
 			if (!shadow)
 				break;
@@ -595,6 +613,16 @@ rasterizer_draw_character_with_dropshadow(
 }
 
 /* ---------- private code */
+
+#ifdef HALO_ANDROID
+void rasterizer_text_set_ui_scale(int x, int y, int percent)
+{
+    porting_text_x = (short)x;
+    porting_text_y = (short)y;
+    porting_text_scale = percent > 0 ? (real)percent/100.0f : 1.0f;
+}
+
+#endif
 
 static struct bitmap_data *
 hardware_character_cache_get_bitmap(

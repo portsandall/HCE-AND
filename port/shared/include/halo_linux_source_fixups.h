@@ -46,4 +46,8 @@ void halo_screen_ui_offset(unsigned char centered);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 
+#ifdef HALO_ANDROID
+#include "halo_porting_ui.h"
+#endif
+
 #endif
