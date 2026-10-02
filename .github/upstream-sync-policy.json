@@ -2,6 +2,7 @@
   "protected": [
     ".github/",
     "README.md",
+    "tools/ci_build.py",
     "tools/sync_upstream.py",
     "tools/tests/test_sync_upstream.py"
   ],

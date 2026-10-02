@@ -107,23 +107,30 @@ A second Fire button on the left lets you shoot while aiming with the right hand
 Menus accept direct taps on the rendered items, including the in-game
 keyboard used for names. The game maps touch positions through the same
 letterboxing and widescreen centering as the renderer. Android Back returns
-to the previous screen. Touch buttons, swipe aiming, phone rumble and gyro
-aim stop while a game menu is open. Controls appear during gameplay;
-**Hide** hides them and **Touch** restores them.
+to the previous screen. Taps on empty left/right screen edges select the
+previous/next item using the current list's direction, including mission
+selection and option lists. **Touch/Hide** remains visible in every menu and
+in gameplay. Menus start with the controller hidden; **Touch** restores its
+buttons and movement stick for screens that need them. Swipe aiming, phone
+rumble and gyro aim stop while a game menu is open.
 
 ### Porting options (3.0)
 
 The main menu adds **Porting options** beneath Campaign, Multiplayer and
-Settings. The pause menu adds **Overlay settings**, **Hardware** and
-**Cheats** beneath its existing actions. These screens are rendered by Halo,
+Settings, centered with the other choices and enlarged to 115%. The pause
+menu also adds a single **Porting options** entry containing **Overlay
+settings**, **Hardware** and **Cheats**. Its frame, original text and touch
+targets are enlarged by 12%. These screens are rendered by Halo,
 using the menu font and colors from the loaded map's widget definitions.
 The engine extends `ui.map` and the level pause UI at runtime; imported map
 files do not need to be replaced or modified.
 
 Porting screens use a full-screen native blue UI bitmap and text enlarged to 160% of the
-map's large UI font, with four settings per list page and 44-pixel touch
-rows in the 640x480 UI space. The pause-menu section shortcuts use 125%
-text. Standalone labels use an explicit alpha so main-menu tags whose
+map's large UI font, with 60-pixel touch rows in the 640x480 UI space.
+Lists show every setting in a vertically scrollable viewport: swipe up/down
+or drag the scrollbar on the right. **Back** stays below the list. Page
+titles are cyan to distinguish them from the option labels. Standalone
+labels use an explicit alpha so main-menu tags whose
 original text alpha is zero remain visible outside their plasma pass.
 Labels use the original text-box renderer with an independent visible instance;
 scaling is scoped to glyph vertices and resets after each label. The blue UI
@@ -136,8 +143,8 @@ bitmap is selected from the current map and fills the entire widescreen area.
   **Export** and **Import** retain Android's document picker. The button
   manager lets you hide/show, duplicate and add buttons, including restoring
   the movement stick. Reset requires confirmation. Size sliders range from
-  50% to 200%; look sensitivity ranges from 0.25x to 4x. Lists use touchable
-  Previous/Next page actions when necessary.
+  50% to 200%; look sensitivity ranges from 0.25x to 4x. All controls,
+  including copies, can be reached by scrolling without Previous/Next pages.
 - **Hardware** contains **Rumble**, **Gyroscope**, **Gyroscope sensitivity**
   and **FPS counter**. Unsupported hardware is marked unavailable. Rumble
   defaults on, gyro and FPS default off. Gyro sensitivity has its own
@@ -158,6 +165,9 @@ Rumble on and Gyroscope off. Clearing app data clears the saved settings.
 Validation: `python tools/test_touch_layout.py` checks persistence, legacy
 imports, invalid settings and gyro integration/orientation. `ninja android`
 and `ninja android_apk` compile the native renderer/input bridge and app.
+`python tools/test_menu_touch.py` executes the actual Java gesture handlers
+with recording inputs to check Touch/Hide, menu button release, direct taps,
+swipe suppression and slider dragging across setting acknowledgements.
 Visual layout, taps on imported map variants, phone rumble and sensor
 response must also be checked on an Android device.
 `python tools/test_porting_ui.py` executes the actual text-box/porting functions

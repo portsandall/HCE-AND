@@ -132,6 +132,13 @@ long halo_screen_width(void)
 	return screen_width;
 }
 
+/* the display's pixels for each of the 480 lines (text_hires.c) */
+float halo_screen_pixel_scale(void)
+{
+	halo_screen_width();
+	return screen_scale[1];
+}
+
 void halo_screen_ui_offset(unsigned char centered)
 {
 	ui_offset = centered ? (halo_screen_width() - 640) / 2 : 0;
@@ -1136,7 +1143,7 @@ HRESULT WINAPI Direct3D_CreateDevice(UINT adapter, D3DDEVTYPE device_type, void 
 int halo_ui_pointer_update(int menus_active, struct halo_ui_pointer *pointer)
 {
 
-    float point[4];
+    float point[6];
     struct render_target_entry *back_buffer = render_target_get(&device.back_buffer);
     int pixel_width, pixel_height, width, height, left, top;
     float sx, sy;
@@ -1158,6 +1165,9 @@ int halo_ui_pointer_update(int menus_active, struct halo_ui_pointer *pointer)
     pointer->y = pointer->click_y = (short)sy;
     pointer->left_clicks = point[2] != 0;
     pointer->right_clicks = point[3] != 0;
+    pointer->scroll_pixels = (short)(point[4]*back_buffer->target.height);
+    pointer->scroll_drag = point[5] != 0;
+    pointer->side_step = point[0] < 0.18f ? -1 : point[0] > 0.82f ? 1 : 0;
     return 1;
 }
 #else

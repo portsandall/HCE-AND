@@ -23,6 +23,19 @@ def resolve_relocations(repo, paths, replacements):
         if Path(path).suffix not in (".c", ".h", ".py", ".md", ".json"):
             continue
         stages = [git(repo, "show", f":{stage}:{path}", check=False) for stage in (1, 2, 3)]
+        # A newly added file under a renamed directory has only stage 3 when
+        # Git reports a file-location conflict. Accept only mapped locations;
+        # other add/delete conflicts still require a human resolution.
+        if stages[0].returncode and stages[1].returncode and not stages[2].returncode:
+            if any(old.endswith("/") and new.endswith("/") and path.startswith(new)
+                   for old, new in replacements.items()):
+                text = stages[2].stdout
+                for old, new in replacements.items():
+                    text = text.replace(old, new)
+                (Path(repo)/path).write_text(text, encoding="utf-8", newline="\n")
+                git(repo, "add", "--", path)
+                resolved.append(path)
+            continue
         if any(stage.returncode for stage in stages):
             continue
         base, ours, theirs = [stage.stdout for stage in stages]

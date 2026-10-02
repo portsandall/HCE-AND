@@ -5627,6 +5627,18 @@ static void ui_widgets_process_mouse(
             ui_mouse_target_count = 0;
             return;
         }
+        /* Screen-edge taps move the focused menu list without activating it.
+           Use the list's own axes for both mission carousels and option lists. */
+        if (pointer.left_clicks && pointer.side_step &&
+            !ui_mouse_target_at(pointer.click_x, pointer.click_y)) {
+            struct widget_instance *list = ui_mouse_wheel_widget(ui_mouse_menu());
+            if (list) {
+                short back, forward;
+                ui_mouse_list_directions(list, &back, &forward);
+                ui_mouse_press(pointer.side_step < 0 ? back : forward);
+                pointer.left_clicks = 0;
+            }
+        }
 #endif
 		if (pointer.moved)
 		{
@@ -5747,6 +5759,7 @@ static void widget_instance_render_recursive(
 	struct bitmap_data *bitmap;
 #ifdef HALO_ANDROID
     struct ui_widget_definition adjusted_definition;
+    point2d unscaled_offset;
 #endif
 
 	if (!use_nifty_plasma_fx &&
@@ -5757,6 +5770,7 @@ static void widget_instance_render_recursive(
 	offset.x += widget->horizontal_offset;
 	offset.y += widget->vertical_offset;
 #ifdef HALO_ANDROID
+    unscaled_offset = offset;
     if (!ui_porting_adjust_widget(widget, &definition, &adjusted_definition, &offset)) return;
 #endif
 	for (input_index = 0;
@@ -5873,12 +5887,25 @@ static void widget_instance_render_recursive(
 	switch (widget->type)
 	{
 	case _ui_widget_type_text_box:
+#ifdef HALO_ANDROID
+        if (ui_porting_context == 2 && !ui_porting_menu.page && widget->parent) {
+            rasterizer_text_set_ui_scale(definition->bounds.x0+offset.x,
+                definition->bounds.y0+offset.y, 112);
+            adjusted_definition.bounds.x1 = definition->bounds.x0+
+                (definition->bounds.x1-definition->bounds.x0)*100/112;
+            adjusted_definition.bounds.y1 = definition->bounds.y0+
+                (definition->bounds.y1-definition->bounds.y0)*100/112;
+        }
+#endif
 		widget_instance_render_text_box(
 			widget,
 			definition,
 			clip_rect,
 			offset,
 			widget_instance_text_box_is_focused(widget));
+#ifdef HALO_ANDROID
+        rasterizer_text_set_ui_scale(0, 0, 100);
+#endif
 		break;
 
 	case _ui_widget_type_spinner_list:
@@ -5911,6 +5938,9 @@ static void widget_instance_render_recursive(
 	}
 	if (render_children)
 	{
+#ifdef HALO_ANDROID
+        offset = unscaled_offset;
+#endif
 		for (child = widget->child; child; child = child->next)
 		{
 			focus = child == widget->focused_child;

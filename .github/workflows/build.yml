@@ -94,6 +94,9 @@ jobs:
       - name: Touch layout tests
         run: python3 tools/test_touch_layout.py
 
+      - name: Menu touch gesture tests
+        run: python3 tools/test_menu_touch.py
+
       - name: Debug
         env:
           HALO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

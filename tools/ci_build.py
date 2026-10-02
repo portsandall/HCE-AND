@@ -50,9 +50,14 @@ def main():
     shutil.copy2(apk, dist / apk.name)
     for source, destination in [
         ("extract-xiso/LICENSE.TXT", "extract-xiso-LICENSE.txt"),
-        ("miniupnpc/LICENSE", "miniupnpc-LICENSE.txt")
+        ("miniupnpc/LICENSE", "miniupnpc-LICENSE.txt"),
+        ("stb/LICENSE", "stb-LICENSE.txt")
     ]:
         shutil.copy2(ROOT / "port/third_party" / source, dist / destination)
+
+    for license in (ROOT / "port/assets/fonts").glob("*-*.txt"):
+        if "LICENSE" in license.name or "OFL" in license.name:
+            shutil.copy2(license, dist / license.name)
 
 if __name__ == "__main__":
     main()

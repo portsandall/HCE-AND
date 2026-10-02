@@ -128,6 +128,30 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((self.repo / "port/shared/src/new.c").read_text(), "shared improvement\n")
         self.assertFalse((self.repo / "port/linux/src/new.c").exists())
 
+    def test_file_location_conflict_accepts_only_known_shared_relocations(self):
+        self.write("port/linux/src/a.c", "a\n")
+        self.write("port/linux/src/b.c", "b\n")
+        self.commit("common engine layer")
+        self.git("branch", "-f", "upstream", "HEAD")
+        self.git("mv", "port/linux", "port/shared")
+        self.commit("rename engine layer")
+        self.upstream_edit("port/linux/src/text.c", "// port/linux/src/text.c\n")
+        sync.git(self.repo, "-c", "merge.directoryRenames=conflict", "merge", "--no-commit", "upstream", check=False)
+        paths = self.git("diff", "--name-only", "--diff-filter=U").splitlines()
+        self.assertEqual(paths, ["port/shared/src/text.c"])
+        resolved = sync.resolve_relocations(self.repo, paths, POLICY["text_relocations"])
+        self.assertEqual(resolved, paths)
+        self.assertEqual(self.git("diff", "--name-only", "--diff-filter=U"), "")
+        self.assertEqual((self.repo/paths[0]).read_text(), "// port/shared/src/text.c\n")
+
+    def test_android_build_driver_is_preserved(self):
+        self.write("tools/ci_build.py", "Android package and version code\n")
+        self.commit("Android build driver")
+        self.upstream_edit("tools/ci_build.py", "Desktop packaging\n")
+        report = sync.prepare(self.repo, "upstream", POLICY)
+        self.assertTrue(report["changed"])
+        self.assertEqual((self.repo/"tools/ci_build.py").read_text(), "Android package and version code\n")
+
     def test_path_move_conflict_keeps_new_upstream_text(self):
         self.write("relocated.c", "// port/linux/foo.c old HUD\n")
         self.commit("shared base")

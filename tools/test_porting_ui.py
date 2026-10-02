@@ -21,7 +21,7 @@ def function(path, name):
             start = source.rfind('\n', 0, start-1)+1
         brace = source.find('{', match.end())
         semicolon = source.find(';', match.end())
-        if semicolon < brace: continue
+        if brace < 0 or (semicolon >= 0 and semicolon < brace): continue
         depth = 1; end = brace+1
         while depth:
             depth += (source[end] == '{')-(source[end] == '}'); end += 1
@@ -45,6 +45,10 @@ typedef int boolean;
 #define FONT_GROUP_TAG 1
 #define BITMAP_GROUP_TAG 2
 #define SECONDS_PER_MILLISECOND 0.001f
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#define PIN(v,a,b) MIN(MAX(v,a),b)
+#define _ui_audio_feedback_cursor 0
 typedef struct {short y0,x0,y1,x1;} rectangle2d;
 typedef struct {short x,y;} point2d;
 typedef struct {real alpha,red,green,blue;} real_argb_color;
@@ -59,12 +63,32 @@ struct ui_widget_definition {
 };
 struct widget_instance {
  struct widget_instance *parent; long definition_tag_index;
+ struct widget_instance *child,*next;
  real alpha_modifier; boolean visible;
  struct {struct {wchar_t *text;short string_list_index;} text_box;} parameters;
 };
 static struct ui_widget_definition template;
-static struct {int page;} ui_porting_menu;
-static int ui_porting_context;
+'''+(root/'port/shared/include/halo_porting_ui.h').read_text()+r'''
+'''+(root/'port/shared/include/halo_ui_pointer.h').read_text()+r'''
+static struct halo_porting_menu ui_porting_menu;
+static int ui_porting_context,ui_porting_count,ui_porting_revision;
+static int ui_porting_scroll,ui_porting_scroll_max;
+#define UI_PORTING_TOP 112
+#define UI_PORTING_BOTTOM 404
+#define UI_PORTING_SCROLL_LEFT 590
+#define UI_PORTING_SCROLL_RIGHT 626
+static rectangle2d ui_porting_bounds[HALO_PORTING_ROWS];
+static int ui_porting_actions[HALO_PORTING_ROWS];
+static struct widget_instance fixture;
+struct ui_mouse_target {int kind; struct widget_instance *widget; rectangle2d bounds;};
+#define _ui_mouse_target_item 0
+static struct ui_mouse_target ui_mouse_targets[4];
+static int ui_mouse_target_count, last_action, last_value, last_justification;
+struct widget_instance *ui_mouse_menu(void){return &fixture;}
+struct widget_instance *ui_porting_find_style(struct widget_instance *root){return root;}
+void host_porting_action(int revision,int action,int value){last_action=action;last_value=value;}
+void ui_play_audio_feedback_sound(int sound){}
+void draw_quad(rectangle2d *bounds,unsigned long color){}
 static struct {long current_system_milliseconds;} widget_globals;
 static void *widget_memory_pool;
 static int glyphs,percent,background_fixture,background_drawn;
@@ -87,7 +111,7 @@ double cos(double x){return 0;}
 int string_has_icons_to_draw(wchar_t*s){return 0;}
 struct ui_widget_definition *ui_widget_definition_get(long tag){return &template;}
 real_argb_color get_ui_argb_white(void){real_argb_color c={1,1,1,1};return c;}
-void draw_string_set_draw_mode(long f,short s,short j,unsigned long flags,real_argb_color const*c){current_color=*c;}
+void draw_string_set_draw_mode(long f,short s,short j,unsigned long flags,real_argb_color const*c){current_color=*c;last_justification=j;}
 void draw_string_set_tab_stops(short const*p,short n){}
 void draw_string_set_indents(short a,short b){}
 void rasterizer_text_set_ui_scale(int x,int y,int p){percent=p;}
@@ -112,6 +136,8 @@ code = prefix + '\n' + '\n'.join([
     function('source/interface/ui_widget.c','widget_instance_render_text_box'),
     function('source/interface/ui_widget_porting.h','ui_porting_text'),
     function('source/interface/ui_widget_porting.h','ui_porting_background'),
+    function('source/interface/ui_widget_porting.h','ui_porting_pointer'),
+    function('source/interface/ui_widget_porting.h','ui_porting_render'),
 ]) + r'''
 int run_tests(void){
  struct widget_instance parent={0},style={0};
@@ -119,25 +145,46 @@ int run_tests(void){
  template.text_label_string_list.index=NONE;template.text_font.index=1;template.justification=0;
  template.text_color.alpha=0;style.parent=&parent;style.alpha_modifier=0;style.visible=0;
  ui_porting_context=1;ui_porting_menu.page=0;glyphs=0;
- ui_porting_text(&style,"Porting options",row,&clip,TRUE);
- if(glyphs!=15||current_color.alpha!=1||percent!=100)return 1;
+ ui_porting_text(&style,"Porting options",row,&clip,TRUE,FALSE);
+ if(glyphs!=15||current_color.alpha!=1||percent!=100||last_justification!=2)return 1;
  ui_porting_context=2;row.y0=286;row.y1=313;glyphs=0;
- ui_porting_text(&style,"Overlay settings",row,&clip,TRUE);
+ ui_porting_text(&style,"Overlay settings",row,&clip,TRUE,FALSE);
  if(glyphs!=16||current_color.alpha!=1)return 2;
  ui_porting_menu.page=6;row.x0=70;row.x1=570;row.y0=112;row.y1=156;glyphs=0;
- ui_porting_text(&style,"Invincibility [ON]",row,&clip,TRUE);
+ ui_porting_text(&style,"Invincibility [ON]",row,&clip,TRUE,FALSE);
  if(glyphs!=18||current_color.alpha!=1||current_color.green!=1)return 3;
- ui_porting_text(&style,"Gyroscope: unavailable",row,&clip,FALSE);
+ ui_porting_text(&style,"Gyroscope: unavailable",row,&clip,FALSE,FALSE);
  if(current_color.alpha!=0.45f||percent!=100)return 4;
  for(background_fixture=0;background_fixture<2;++background_fixture){
   background_drawn=0;ui_porting_background();
   if(!background_drawn||background_bounds.x0!=-214||background_bounds.x1!=854||background_bounds.y0!=0||background_bounds.y1!=480)return 5;
  }
+ row.y0=60;row.y1=108;
+ ui_porting_text(&style,"Hardware",row,&clip,TRUE,TRUE);
+ if(current_color.red!=0.35f||current_color.green!=0.8f)return 6;
+ ui_porting_menu.count=65;ui_porting_menu.revision=8;
+ for(int i=0;i<64;++i){memcpy(ui_porting_menu.rows[i].text,"Fire",5);ui_porting_menu.rows[i].action=1000+i;ui_porting_menu.rows[i].value=-1;}
+ ui_porting_render(&fixture,&clip);
+ if(ui_porting_scroll_max!=3548||ui_porting_count!=6)return 7;
+ if(ui_porting_actions[ui_porting_count-1]!=90||ui_porting_bounds[ui_porting_count-1].y0!=420)return 8;
+ struct halo_ui_pointer pointer={0};pointer.scroll_pixels=32767;last_action=0;
+ if(!ui_porting_pointer(&pointer)||ui_porting_scroll!=3548||last_action)return 9;
+ ui_porting_render(&fixture,&clip);
+ pointer.scroll_pixels=0;pointer.left_clicks=1;pointer.click_x=100;pointer.click_y=365;
+ ui_porting_pointer(&pointer);
+ if(last_action!=1063)return 10;
+ pointer.click_y=445;ui_porting_pointer(&pointer);
+ if(last_action!=90)return 11;
+ pointer.left_clicks=0;pointer.scroll_drag=1;pointer.x=608;pointer.y=112;last_action=0;
+ ui_porting_pointer(&pointer);
+ if(ui_porting_scroll!=0||last_action)return 12;
+ pointer.scroll_drag=0;pointer.scroll_pixels=-32767;ui_porting_pointer(&pointer);
+ if(ui_porting_scroll!=0)return 13;
  return 0;
 }
 '''
 (out/'test.c').write_text(code)
 subprocess.run([str(ndk/'clang.exe'),'--target=wasm32','-std=c99','-fshort-wchar','-ffreestanding','-fno-builtin','-c',str(out/'test.c'),'-o',str(out/'test.o')],check=True)
 subprocess.run([str(ndk/'ld.lld.exe'),'-flavor','wasm','--no-entry','--export=run_tests',str(out/'test.o'),'-o',str(out/'test.wasm')],check=True)
-(out/'run.cjs').write_text('const fs=require("fs"); const instance=new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(__dirname+"/test.wasm"))); const result=instance.exports.run_tests(); if(result) throw new Error("UI regression "+result); console.log("Native text-box dispatch, zero-alpha/fade labels, enlarged rows and full-screen UI bitmaps passed");')
+(out/'run.cjs').write_text('const fs=require("fs"); const instance=new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(__dirname+"/test.wasm"))); const result=instance.exports.run_tests(); if(result) throw new Error("UI regression "+result); console.log("Native text dispatch, centered labels, title color, bitmap bounds, 64-control scrolling and fixed Back passed");')
 subprocess.run([shutil.which('node'),str(out/'run.cjs')],check=True)

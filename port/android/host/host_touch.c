@@ -15,7 +15,7 @@ static int32_t cheat_commands[16], cheat_status[16];
 static int rumble_amplitude;
 static struct timespec rumble_time;
 static int ui_menus = 1, ui_context, ui_action, ui_value, ui_revision;
-static float ui_point[4]; /* normalized x/y, click, back */
+static float ui_point[6]; /* normalized x/y, click, back, scroll, scrollbar */
 static struct halo_porting_menu porting_menu;
 static int frame_count, frame_fps;
 static struct timespec frame_time;
@@ -36,7 +36,7 @@ void host_touch_pointer_read(float *point)
 {
     pthread_mutex_lock(&touch_lock);
     memcpy(point, ui_point, sizeof(ui_point));
-    ui_point[2] = ui_point[3] = 0;
+    ui_point[2] = ui_point[3] = ui_point[4] = ui_point[5] = 0;
     pthread_mutex_unlock(&touch_lock);
 }
 
@@ -87,7 +87,8 @@ JNIEXPORT jintArray JNICALL Java_com_halo_decomp_TouchControls_nativeMenuPoll(JN
 }
 
 JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeMenuPointer(
-    JNIEnv *env, jclass cls, jfloat x, jfloat y, jboolean click, jboolean back)
+    JNIEnv *env, jclass cls, jfloat x, jfloat y, jboolean click, jboolean back,
+    jfloat scroll, jboolean scrollbar)
 {
     (void)env; (void)cls;
     pthread_mutex_lock(&touch_lock);
@@ -95,6 +96,8 @@ JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeMenuPointer(
         ui_point[0] = x; ui_point[1] = y;
         if (click) ui_point[2] = 1;
         if (back) ui_point[3] = 1;
+        ui_point[4] += scroll;
+        if (scrollbar) ui_point[5] = 1;
     }
     pthread_mutex_unlock(&touch_lock);
 }
@@ -244,7 +247,8 @@ JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeState(
 	(void)cls;
 	pthread_mutex_lock(&touch_lock);
 	memcpy(touch_state, next, sizeof(next));
-	if (ui_menus) memset(touch_state, 0, sizeof(touch_state));
+	if (porting_menu.editing || (ui_menus && porting_menu.page))
+		memset(touch_state, 0, sizeof(touch_state));
 	pthread_mutex_unlock(&touch_lock);
 }
 

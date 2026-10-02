@@ -5,6 +5,11 @@ static struct halo_porting_menu ui_porting_menu;
 static rectangle2d ui_porting_bounds[HALO_PORTING_ROWS];
 static int ui_porting_actions[HALO_PORTING_ROWS];
 static int ui_porting_count, ui_porting_revision, ui_porting_context;
+static int ui_porting_scroll, ui_porting_scroll_max, ui_porting_last_page;
+#define UI_PORTING_TOP 112
+#define UI_PORTING_BOTTOM 404
+#define UI_PORTING_SCROLL_LEFT 590
+#define UI_PORTING_SCROLL_RIGHT 626
 
 static int ui_porting_get_context(void)
 {
@@ -52,14 +57,19 @@ static void ui_porting_prepare(void)
     host_porting_menu_read(&ui_porting_menu);
     if (context != ui_porting_context) ui_porting_count = 0;
     ui_porting_context = context;
+    if (ui_porting_menu.page != ui_porting_last_page || !context) {
+        ui_porting_scroll = ui_porting_scroll_max = 0;
+        ui_porting_last_page = ui_porting_menu.page;
+    }
 }
 
-/* Stretch the pause frame, preserving its map bitmaps. Definitions are copied
+/* Enlarge the pause frame and its touch targets by 12%. Definitions are copied
    for this draw; imported tags and widget history remain untouched. */
 static boolean ui_porting_adjust_widget(struct widget_instance *widget,
     struct ui_widget_definition **definition, struct ui_widget_definition *copy, point2d *offset)
 {
     char const *name, *leaf;
+    struct widget_instance *ancestor;
     int expanded = ui_porting_menu.page != 0;
     if (!ui_porting_context || !widget->parent) return TRUE;
     if (ui_porting_menu.editing) return FALSE;
@@ -71,13 +81,26 @@ static boolean ui_porting_adjust_widget(struct widget_instance *widget,
     leaf = leaf ? leaf+1 : name;
     if (!leaf) return TRUE;
     if (ui_porting_context != 2) return TRUE;
+    *copy = **definition;
     if (!strcmp(leaf, "pause_dialog_bkd") || !strncmp(leaf, "pausebox", 8)) {
-        *copy = **definition;
-        copy->bounds.y1 += 84;
-        *definition = copy;
-    } else if (!strncmp(leaf, "button_key", 10)) {
-        offset->y += 84;
+        copy->bounds.y1 += 38;
     }
+    for (ancestor = widget; ancestor; ancestor = ancestor->parent) {
+        name = tag_get_name(ancestor->definition_tag_index);
+        leaf = name ? strrchr(name, '\\') : NULL;
+        leaf = leaf ? leaf+1 : name;
+        if (leaf && !strncmp(leaf, "button_key", 10)) {
+            offset->y += 38;
+            break;
+        }
+    }
+    copy->bounds.x0 = copy->bounds.x0*112/100;
+    copy->bounds.x1 = copy->bounds.x1*112/100;
+    copy->bounds.y0 = copy->bounds.y0*112/100;
+    copy->bounds.y1 = copy->bounds.y1*112/100;
+    offset->x = 320+(offset->x-320)*112/100;
+    offset->y = 240+(offset->y-240)*112/100;
+    *definition = copy;
     return TRUE;
 }
 
@@ -86,6 +109,22 @@ static boolean ui_porting_pointer(struct halo_ui_pointer *pointer)
 {
     int i;
     if (!ui_porting_context) return FALSE;
+    if (ui_porting_menu.page && ui_porting_scroll_max) {
+        if ((pointer->scroll_drag || pointer->left_clicks) &&
+            pointer->x >= UI_PORTING_SCROLL_LEFT && pointer->x < UI_PORTING_SCROLL_RIGHT &&
+            pointer->y >= UI_PORTING_TOP && pointer->y < UI_PORTING_BOTTOM) {
+            int height = UI_PORTING_BOTTOM-UI_PORTING_TOP;
+            int thumb = MAX(28, height*height/(height+ui_porting_scroll_max));
+            ui_porting_scroll = PIN((pointer->y-UI_PORTING_TOP-thumb/2)*ui_porting_scroll_max /
+                MAX(1, height-thumb), 0, ui_porting_scroll_max);
+            return TRUE;
+        }
+        if (pointer->scroll_pixels || pointer->wheel_steps) {
+            ui_porting_scroll = PIN(ui_porting_scroll+pointer->scroll_pixels-pointer->wheel_steps*60,
+                0, ui_porting_scroll_max);
+            return TRUE;
+        }
+    }
     if (ui_porting_menu.page && pointer->right_clicks) {
         host_porting_action(ui_porting_menu.revision, 90, 0);
         return TRUE;
@@ -108,13 +147,14 @@ static boolean ui_porting_pointer(struct halo_ui_pointer *pointer)
 }
 
 static void ui_porting_text(struct widget_instance *style, char const *text, rectangle2d bounds,
-    rectangle2d *clip, boolean enabled)
+    rectangle2d *clip, boolean enabled, boolean heading)
 {
     struct ui_widget_definition definition = *ui_widget_definition_get(style->definition_tag_index);
     struct widget_instance instance = *style;
     wchar_t wide[96];
     point2d offset = {0, 0};
-    int percent = ui_porting_menu.page ? 160 : ui_porting_context == 2 ? 125 : 100;
+    rectangle2d scaled_clip = *clip;
+    int percent = ui_porting_menu.page ? 160 : ui_porting_context == 2 ? 125 : 115;
     ascii_to_wide(text, wide, sizeof(wide));
     definition.bounds = bounds;
     definition.bounds.x1 = bounds.x0 + (bounds.x1-bounds.x0)*100/percent;
@@ -127,6 +167,12 @@ static void ui_porting_text(struct widget_instance *style, char const *text, rec
     definition.text_color.red = 0.85f;
     definition.text_color.green = 0.94f;
     definition.text_color.blue = 1.0f;
+    definition.justification = 2;
+    if (heading) {
+        definition.text_color.red = 0.35f;
+        definition.text_color.green = 0.8f;
+        definition.text_color.blue = 1.0f;
+    }
     if (ui_porting_menu.page) {
         long font = tag_loaded(FONT_GROUP_TAG, "ui\\large_ui");
         if (font != NONE) definition.text_font.index = font;
@@ -145,8 +191,14 @@ static void ui_porting_text(struct widget_instance *style, char const *text, rec
     instance.parameters.text_box.text = wide;
     draw_string_set_tab_stops(NULL, 0);
     draw_string_set_indents(0, 0);
+    /* The rasterizer scales glyphs after clipping. Transform the clip back
+       into glyph coordinates so a scrolled row cannot cover title or Back. */
+    scaled_clip.x0 = bounds.x0+(clip->x0-bounds.x0)*100/percent;
+    scaled_clip.x1 = bounds.x0+(clip->x1-bounds.x0)*100/percent;
+    scaled_clip.y0 = bounds.y0+(clip->y0-bounds.y0)*100/percent;
+    scaled_clip.y1 = bounds.y0+(clip->y1-bounds.y0)*100/percent;
     rasterizer_text_set_ui_scale(bounds.x0, bounds.y0, percent);
-    widget_instance_render_text_box(&instance, &definition, clip, offset, FALSE);
+    widget_instance_render_text_box(&instance, &definition, &scaled_clip, offset, FALSE);
     rasterizer_text_set_ui_scale(0, 0, 100);
 }
 
@@ -172,10 +224,8 @@ static void ui_porting_background(void)
 static void ui_porting_render(struct widget_instance *root, rectangle2d *clip)
 {
     struct widget_instance *style;
-    rectangle2d row;
-    int count, i, top = 0, left = 0, right = 0, step = 44;
-    static char const *sections[] = {"Overlay settings", "Hardware", "Cheats"};
-    static int const sections_actions[] = {2, 3, 6};
+    rectangle2d row, viewport = *clip;
+    int count, i, top = 0, left = 0, right = 0, step = 60;
     ui_porting_count = 0;
     if (!ui_porting_context || ui_porting_menu.editing || root != ui_mouse_menu()) return;
     style = ui_porting_find_style(root);
@@ -188,32 +238,41 @@ static void ui_porting_render(struct widget_instance *root, rectangle2d *clip)
             if (!list) { list = target->widget->parent; left = target->bounds.x0; right = target->bounds.x1; }
             if (target->widget->parent != list) continue;
             top = MAX(top, target->bounds.y1);
-            step = MAX(24, target->bounds.y1-target->bounds.y0);
+            step = MAX(30, target->bounds.y1-target->bounds.y0);
         }
         if (!list) return;
-        count = ui_porting_context == 1 ? 1 : 3;
-        step = MIN(step, (430-top)/count);
-        if (step < 20) return;
+        /* Align to the whole list, including map-specific first-item offsets. */
+        if (ui_porting_context == 1) { left = 192; right = 448; }
+        count = 1;
         top += 4;
     } else {
-        count = ui_porting_menu.count;
+        count = MAX(0, ui_porting_menu.count-1); /* Back stays below the viewport. */
         ui_porting_background();
-        left = 70; right = 570; top = 112;
+        left = 70; right = 570; top = UI_PORTING_TOP;
         row.x0 = left; row.x1 = right; row.y0 = 60; row.y1 = 108;
-        ui_porting_text(style, ui_porting_menu.title, row, clip, TRUE);
-        if (count <= 2) step = 88;
+        ui_porting_text(style, ui_porting_menu.title, row, clip, TRUE, TRUE);
+        if (count <= 1) step = 88;
+        ui_porting_scroll_max = MAX(0, count*step-(UI_PORTING_BOTTOM-UI_PORTING_TOP));
+        ui_porting_scroll = PIN(ui_porting_scroll, 0, ui_porting_scroll_max);
+        viewport.y0 = MAX(viewport.y0, UI_PORTING_TOP);
+        viewport.y1 = MIN(viewport.y1, UI_PORTING_BOTTOM);
     }
     ui_porting_revision = ui_porting_menu.revision;
     for (i = 0; i < count; ++i) {
-        char const *text = ui_porting_menu.page ? ui_porting_menu.rows[i].text :
-            ui_porting_context == 1 ? "Porting options" : sections[i];
-        int action = ui_porting_menu.page ? ui_porting_menu.rows[i].action :
-            ui_porting_context == 1 ? 1 : sections_actions[i];
+        char const *text = ui_porting_menu.page ? ui_porting_menu.rows[i].text : "Porting options";
+        int action = ui_porting_menu.page ? ui_porting_menu.rows[i].action : 1;
         int value = ui_porting_menu.page ? ui_porting_menu.rows[i].value : -1;
-        row.x0 = left; row.x1 = right; row.y0 = top+i*step; row.y1 = row.y0+step;
-        ui_porting_bounds[i] = row; ui_porting_actions[i] = action;
-        if (strstr(text, "[ON]")) draw_quad(&row, 0xaa267447);
-        ui_porting_text(style, text, row, clip, action != 0);
+        rectangle2d hit;
+        row.x0 = left; row.x1 = right;
+        row.y0 = top+i*step-(ui_porting_menu.page ? ui_porting_scroll : 0);
+        row.y1 = row.y0+step;
+        if (row.y1 <= viewport.y0 || row.y0 >= viewport.y1) continue;
+        hit = row;
+        hit.y0 = MAX(hit.y0, viewport.y0); hit.y1 = MIN(hit.y1, viewport.y1);
+        ui_porting_bounds[ui_porting_count] = hit;
+        ui_porting_actions[ui_porting_count++] = action;
+        if (strstr(text, "[ON]")) draw_quad(&hit, 0xaa267447);
+        ui_porting_text(style, text, row, &viewport, action != 0, FALSE);
         if (value >= 0) {
             rectangle2d bar = row, thumb;
             bar.y0 += 52; bar.y1 = bar.y0+4;
@@ -224,7 +283,24 @@ static void ui_porting_render(struct widget_instance *root, rectangle2d *clip)
             thumb.y0 -= 6; thumb.y1 += 6;
             draw_quad(&thumb, 0xffd7efff);
         }
-        ++ui_porting_count;
+    }
+    if (ui_porting_menu.page) {
+        if (ui_porting_scroll_max) {
+            int height = UI_PORTING_BOTTOM-UI_PORTING_TOP;
+            int size = MAX(28, height*height/(height+ui_porting_scroll_max));
+            rectangle2d track, thumb;
+            track.x0 = UI_PORTING_SCROLL_LEFT+12; track.x1 = UI_PORTING_SCROLL_RIGHT-12;
+            track.y0 = UI_PORTING_TOP; track.y1 = UI_PORTING_BOTTOM;
+            draw_quad(&track, 0xff365468);
+            thumb = track;
+            thumb.y0 += ui_porting_scroll*(height-size)/ui_porting_scroll_max;
+            thumb.y1 = thumb.y0+size;
+            draw_quad(&thumb, 0xff83d9ff);
+        }
+        row.x0 = left; row.x1 = right; row.y0 = 420; row.y1 = 472;
+        ui_porting_bounds[ui_porting_count] = row;
+        ui_porting_actions[ui_porting_count++] = 90;
+        ui_porting_text(style, "Back", row, clip, TRUE, FALSE);
     }
 }
 #endif

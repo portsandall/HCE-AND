@@ -103,7 +103,10 @@ public final class TouchControls extends View implements SensorEventListener {
     private float dragOffsetX, dragOffsetY;
     private float scale = 1, offsetX, offsetY;
     private int insetLeft, insetRight, insetTop, insetBottom;
-    private boolean visible = true;
+    private boolean visible = true, menuOverlayVisible;
+    private int menuPointer = -1, menuGestureRevision, menuGesturePage;
+    private float menuStartX, menuStartY, menuLastY;
+    private boolean menuScrolled;
 
     private static native void nativeState(int lx, int ly, int rx, int ry,
                                           int lt, int rt, int buttons);
@@ -169,7 +172,7 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     public void reset() {
-        dragPointer = dragControl = -1;
+        dragPointer = dragControl = menuPointer = -1;
         owners.clear();
         buttonTouches.clear();
         lookPointer = -1;
@@ -181,7 +184,7 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private void publish() {
-        if (editing || menusActive) {
+        if (editing || (menusActive && (!menuOverlayVisible || menuPage != 0))) {
             nativeState(0, 0, 0, 0, 0, 0, 0);
             return;
         }
@@ -210,7 +213,7 @@ public final class TouchControls extends View implements SensorEventListener {
         if (editing && inside(x, y, optionsX()-156, toolbarY(), 34)) return EXPORT;
         if (editing && inside(x, y, optionsX()-78, toolbarY(), 34)) return IMPORT;
         if (inside(x, y, logicalWidth/2, toolbarY(), 28)) return TOGGLE;
-        if (!visible) return Integer.MIN_VALUE;
+        if (!overlayVisible()) return Integer.MIN_VALUE;
         for (int i = 0; i < layout.size(); i++) {
             if (!layout.shown(i) || layout.type(i) == LEFT) continue;
             Button b = buttons[layout.type(i)];
@@ -236,13 +239,22 @@ public final class TouchControls extends View implements SensorEventListener {
         int id = event.getPointerId(index);
         float x = (event.getX(index)-offsetX)/scale, y = (event.getY(index)-offsetY)/scale;
         if (editing) return editTouch(event, action, index, id, x, y);
-        if (menusActive) {
-            if (event.getPointerId(index) == event.getPointerId(0) &&
-                    (action == MotionEvent.ACTION_UP ||
-                    (action == MotionEvent.ACTION_MOVE && (menuPage == 4 || menuPage == 5 || menuPage == 12))))
-                nativeMenuPointer(event.getX(0)/getWidth(), event.getY(0)/getHeight(), true, false);
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+            if (hit(x, y) == TOGGLE) {
+                reset();
+                if (menusActive) menuOverlayVisible = !menuOverlayVisible;
+                else visible = !visible;
+                owners.put(id, TOGGLE);
+                performClick(); invalidate(); return true;
+            }
+        }
+        if (owners.get(id, Integer.MIN_VALUE) == TOGGLE) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP)
+                owners.delete(id);
             return true;
         }
+        if (menusActive && (menuPointer >= 0 || owners.size() == 0 && hit(x, y) == Integer.MIN_VALUE))
+            return menuTouch(event, action, index, id);
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             int control = hit(x, y);
             if (control == EDIT) {
@@ -253,7 +265,7 @@ public final class TouchControls extends View implements SensorEventListener {
                 owners.put(id, control);
                 if (control >= 0 && layout.type(control) == LEFT) moveStick(control, x, y);
                 else buttonTouches.put(id, new float[]{event.getX(index), event.getY(index)});
-            } else if (visible && lookPointer < 0) {
+            } else if (!menusActive && visible && lookPointer < 0) {
                 lookPointer = id; lookX = event.getX(index); lookY = event.getY(index);
                 owners.put(id, LOOK);
             }
@@ -264,7 +276,7 @@ public final class TouchControls extends View implements SensorEventListener {
                     moveStick(control, (event.getX(i)-offsetX)/scale, (event.getY(i)-offsetY)/scale);
                 int pointer = event.getPointerId(i);
                 float[] origin = buttonTouches.get(pointer);
-                if (lookPointer < 0 && origin != null &&
+                if (!menusActive && lookPointer < 0 && origin != null &&
                         Math.hypot(event.getX(i)-origin[0], event.getY(i)-origin[1]) > 10*scale) {
                     // A held action button can also aim, including either Fire button.
                     lookPointer = pointer; lookX = origin[0]; lookY = origin[1];
@@ -288,6 +300,37 @@ public final class TouchControls extends View implements SensorEventListener {
             reset();
         }
         publish(); invalidate();
+        return true;
+    }
+
+    private boolean menuTouch(MotionEvent event, int action, int index, int id) {
+        if (action == MotionEvent.ACTION_DOWN) {
+            menuPointer = id; menuGestureRevision = revision; menuGesturePage = menuPage;
+            menuStartX = event.getX(index); menuStartY = menuLastY = event.getY(index);
+            menuScrolled = false;
+        } else if (action == MotionEvent.ACTION_MOVE && menuPointer >= 0) {
+            int p = event.findPointerIndex(menuPointer);
+            if (p < 0 || menuGesturePage != menuPage) return true;
+            float px = event.getX(p), py = event.getY(p);
+            if (menuPage == 4 || menuPage == 5 || menuPage == 12) {
+                nativeMenuPointer(px/getWidth(), py/getHeight(), true, false, 0, false);
+                menuScrolled = true;
+            } else if (menuPage != 0) {
+                boolean scrollbar = menuStartX/getWidth() > 0.72f;
+                if (scrollbar || Math.abs(py-menuStartY) > 12*scale) {
+                    menuScrolled = true;
+                    nativeMenuPointer(px/getWidth(), py/getHeight(), false, false,
+                        (menuLastY-py)/getHeight(), scrollbar);
+                }
+            }
+            menuLastY = py;
+        } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) && id == menuPointer) {
+            if (!menuScrolled && menuGestureRevision == revision) {
+                nativeMenuPointer(event.getX(index)/getWidth(), event.getY(index)/getHeight(), true, false, 0, false);
+                performClick();
+            }
+            menuPointer = -1;
+        } else if (action == MotionEvent.ACTION_CANCEL) { reset(); }
         return true;
     }
 
@@ -339,10 +382,9 @@ public final class TouchControls extends View implements SensorEventListener {
 
 
     private boolean menusActive = true;
-    private int menuContext, menuPage, menuOffset, selectedControl, revision, currentFps;
-    private static final int MENU_PAGE_SIZE = 4;
+    private int menuContext, menuPage, selectedControl, revision, currentFps;
     private static native int[] nativeMenuPoll();
-    private static native void nativeMenuPointer(float x, float y, boolean click, boolean back);
+    private static native void nativeMenuPointer(float x, float y, boolean click, boolean back, float scroll, boolean scrollbar);
     private static native void nativeMenuPublish(int revision, int page, boolean editing,
         String title, String[] labels, int[] actions, int[] values);
     private static final String[] CHEATS = {"Invincibility", "Jetpack", "Infinite ammo", "Bump possession",
@@ -357,7 +399,7 @@ public final class TouchControls extends View implements SensorEventListener {
                 boolean active = state[0] != 0;
                 if (active != menusActive || menuContext != state[1]) {
                     menusActive = active; menuContext = state[1];
-                    menuPage = menuOffset = 0; editing = false;
+                    menuPage = 0; editing = false; menuOverlayVisible = false;
                     reset(); cancelRumble(); updateSensors(); revision++; publishMenu();
                 }
                 if (state[2] != 0 && state[4] == revision) applyMenuAction(state[2], state[3]);
@@ -376,11 +418,13 @@ public final class TouchControls extends View implements SensorEventListener {
                 editing = false; menuPage = 2; revision++; publishMenu(); invalidate();
             }
         }
-        else nativeMenuPointer(0, 0, false, true);
+        else nativeMenuPointer(0, 0, false, true, 0, false);
         return true;
     }
 
     private void applyMenuAction(int action, int value) {
+        // Release overlay buttons before switching to a custom page.
+        if (owners.size() != 0) reset();
         if (action >= 3000) {
             int id = action-3000, status = nativeCheatStatus(id);
             if (status != -2) nativeCheatRequest(id, id >= 10 || status != 1);
@@ -388,25 +432,23 @@ public final class TouchControls extends View implements SensorEventListener {
             if (layout.add(action-2000) < 0)
                 Toast.makeText(getContext(), "Control limit reached or movement stick already visible.", Toast.LENGTH_SHORT).show();
             else saveLayout();
-            menuPage = 7; menuOffset = 0;
+            menuPage = 7;
         } else if (action >= 1000) {
             selectedControl = action-1000; menuPage = menuPage == 8 ? 12 : 9;
         } else if (action == 90) {
-            if (menuPage == 1 || (menuContext == 2 && (menuPage == 2 || menuPage == 3 || menuPage == 6))) menuPage = 0;
+            if (menuPage == 1) menuPage = 0;
             else if (menuPage == 2 || menuPage == 3 || menuPage == 6) menuPage = 1;
             else if (menuPage == 5) menuPage = 3;
             else if (menuPage == 9 || menuPage == 10 || menuPage == 11) menuPage = 7;
             else if (menuPage == 12) menuPage = 8;
             else menuPage = 2;
-            menuOffset = 0;
-        } else if (action == 91 || action == 92) menuOffset += action == 91 ? MENU_PAGE_SIZE : -MENU_PAGE_SIZE;
-        else if (action == 12) { editing = true; visible = true; reset(); updateSensors(); }
+        } else if (action == 12) { editing = true; visible = true; reset(); updateSensors(); }
         else if (action == 20) { layout.setShown(selectedControl, !layout.shown(selectedControl)); saveLayout(); }
         else if (action == 21) {
             if (layout.duplicate(selectedControl) < 0)
                 Toast.makeText(getContext(), "Maximum 64 controls.", Toast.LENGTH_SHORT).show();
             else saveLayout();
-        } else if (action == 22) { layout.resetDefaults(); saveLayout(); menuPage = 7; menuOffset = 0; }
+        } else if (action == 22) { layout.resetDefaults(); saveLayout(); menuPage = 7; }
         else if (action == 30) { layout.rumbleEnabled = !layout.rumbleEnabled; cancelRumble(); saveLayout(); }
         else if (action == 31) { layout.gyroscopeEnabled = !layout.gyroscopeEnabled; updateSensors(); saveLayout(); }
         else if (action == 32) { layout.fpsCounter = !layout.fpsCounter; saveLayout(); }
@@ -416,7 +458,7 @@ public final class TouchControls extends View implements SensorEventListener {
             saveLayout();
         } else if (action == 42) {
             layout.setSize(selectedControl, 0.5f+Math.max(0, Math.min(1000, value))*1.5f/1000); saveLayout();
-        } else { menuPage = action; menuOffset = 0; }
+        } else { menuPage = action; }
         revision++; publishMenu(); invalidate();
     }
 
@@ -448,13 +490,13 @@ public final class TouchControls extends View implements SensorEventListener {
             values.set(0, Math.round((amount-(size ? 0.5f : 0.25f))/(size ? 1.5f : 3.75f)*1000));
         } else if (menuPage == 6) {
             title = "Cheats";
-            for (int i = menuOffset; i < Math.min(CHEATS.length, menuOffset+MENU_PAGE_SIZE); i++) {
+            for (int i = 0; i < CHEATS.length; i++) {
                 int status = nativeCheatStatus(i);
                 row.accept(CHEATS[i]+(status == -2 ? " ..." : status == -1 ? " (unavailable)" : i < 10 ? status == 1 ? " [ON]" : " [OFF]" : " (instant)"), 3000+i);
             }
         } else if (menuPage == 7 || menuPage == 8) {
             title = menuPage == 7 ? "Hide or add buttons" : "Edit buttons size";
-            for (int i = menuOffset; i < Math.min(layout.size(), menuOffset+MENU_PAGE_SIZE); i++)
+            for (int i = 0; i < layout.size(); i++)
                 row.accept(controlName(layout.type(i))+(i >= TouchLayout.BASE_COUNT ? " #"+(i+1) : "")+
                     (menuPage == 7 ? layout.shown(i) ? " [visible]" : " [hidden]" : " "+Math.round(layout.sizeScale(i)*100)+"%"), 1000+i);
         } else if (menuPage == 9) {
@@ -464,14 +506,9 @@ public final class TouchControls extends View implements SensorEventListener {
             row.accept("Add button", 10); row.accept("Reset all buttons", 11);
         } else if (menuPage == 10) {
             title = "Add button";
-            for (int i = menuOffset; i < Math.min(TouchLayout.BASE_COUNT, menuOffset+MENU_PAGE_SIZE); i++) row.accept(controlName(i), 2000+i);
+            for (int i = 0; i < TouchLayout.BASE_COUNT; i++) row.accept(controlName(i), 2000+i);
         } else if (menuPage == 11) {
             title = "Restore defaults and remove copies?"; row.accept("Reset all buttons", 22);
-        }
-        if (menuPage == 6 || menuPage == 7 || menuPage == 8 || menuPage == 10) {
-            int count = menuPage == 6 ? CHEATS.length : menuPage == 10 ? TouchLayout.BASE_COUNT : layout.size();
-            if (menuOffset > 0) row.accept("Previous page", 92);
-            if (menuOffset+MENU_PAGE_SIZE < count) row.accept("Next page", 91);
         }
         if (menuPage != 0) row.accept("Back", 90);
         int[] ids = new int[actions.size()], progress = new int[values.size()];
@@ -566,16 +603,19 @@ public final class TouchControls extends View implements SensorEventListener {
                24*layout.sizeScale(LEFT), "", held(LEFT));
     }
 
+    private boolean overlayVisible() {
+        return editing || (menusActive ? menuOverlayVisible : visible);
+    }
+
     @Override protected void onDraw(Canvas canvas) {
         if (layout.fpsCounter && !menusActive && !editing) {
             paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
             paint.setTextAlign(Paint.Align.LEFT); paint.setTextSize(18*scale);
             canvas.drawText("FPS: "+currentFps, insetLeft+12*scale, insetTop+24*scale, paint);
         }
-        if (menusActive && !editing) return;
         canvas.save(); canvas.translate(offsetX, offsetY); canvas.scale(scale, scale);
-        if (!editing) circle(canvas, logicalWidth/2, toolbarY(), 28, visible ? "Hide" : "Touch", false);
-        if (visible) {
+        if (!editing) circle(canvas, logicalWidth/2, toolbarY(), 28, (menusActive ? menuOverlayVisible : visible) ? "Hide" : "Touch", false);
+        if (overlayVisible()) {
             if (layout.shown(LEFT)) stick(canvas, 0, layout.x(LEFT), layout.y(LEFT), "Move");
             for (int i = 0; i < layout.size(); i++) {
                 if (!layout.shown(i) || layout.type(i) == LEFT) continue;
