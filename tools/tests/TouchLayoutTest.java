@@ -8,8 +8,18 @@ public final class TouchLayoutTest {
     public static void main(String[] args) {
         TouchLayout layout = new TouchLayout();
         check(layout.size() == 18, "All 17 buttons and the movement stick must be editable");
-        check(layout.x(TouchLayout.LEFT) == 115 && layout.y(TouchLayout.FIRE_LEFT) == 239,
-              "Existing layouts must start with the original controls");
+        try {
+            java.util.Properties defaults = new java.util.Properties();
+            try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(java.nio.file.Path.of(args[0]))) { defaults.load(reader); }
+            for (int i = 0; i < layout.size(); i++) {
+                String key = "control."+i+".";
+                check(Math.abs(layout.x(i)-Float.parseFloat(defaults.getProperty(key+"x"))) < 0.001f &&
+                      Math.abs(layout.y(i)-Float.parseFloat(defaults.getProperty(key+"y"))) < 0.001f &&
+                      layout.sizeScale(i) == Float.parseFloat(defaults.getProperty(key+"size")) &&
+                      layout.shown(i) == Boolean.parseBoolean(defaults.getProperty(key+"visible")),
+                      "Default control must match supplied layout: "+i);
+            }
+        } catch (java.io.IOException e) { throw new AssertionError(e); }
         layout.move(TouchLayout.LEFT, -500, -500);
         check(layout.x(TouchLayout.LEFT) >= 64 && layout.y(TouchLayout.LEFT) == 64,
               "Dragging must keep the full stick inside the screen without a toolbar exclusion");
@@ -35,7 +45,7 @@ public final class TouchLayoutTest {
         check(reopened.y(10) == 36, "Reopening must preserve unmoved top-row controls");
         reopened.bounds(1200, 540);
         reopened.move(0, 9999, 1);
-        check(reopened.x(0) == 1164 && reopened.y(0) == 36,
+        check(reopened.x(0) == 1200-reopened.radius(0) && reopened.y(0) == reopened.radius(0),
               "Controls must reach the full widescreen edge and top edge");
         TouchLayout wide = new TouchLayout();
         wide.restore(0, reopened.savedX(0), reopened.savedY(0));
@@ -64,7 +74,7 @@ public final class TouchLayoutTest {
         check(wide.add(TouchLayout.LEFT) == TouchLayout.LEFT, "Hidden move stick must be restorable");
         reject(exported.replace("version=3", "version=9"));
         reject(exported.replace("control.18.type=4", "control.18.type=16"));
-        reject(exported.replace("control.18.x=240.0", "control.18.x=NaN"));
+        reject(exported.replaceAll("(?m)^control\\.18\\.x=.*$", "control.18.x=NaN"));
         reject(exported.replace("count=19", "count=10000"));
         reject(exported.replace("sensitivity=2.25", "sensitivity=Infinity"));
         reject(exported.replace("control.0.visible=false", "control.0.visible=maybe")
@@ -105,12 +115,21 @@ public final class TouchLayoutTest {
         check(old.layout.sizeScale(copy) == 1 && old.layout.rumbleEnabled && !old.layout.gyroscopeEnabled,
               "Legacy layouts must load with default sizes and gyro disabled");
         wide.resetDefaults();
-        check(wide.size() == 18 && wide.shown(4) && wide.x(4) == 915*1200f/960,
+        check(wide.size() == 18 && wide.shown(4) && Math.abs(wide.x(4)-808.50323f*1200f/960) < 0.001f,
               "Reset restores defaults on the current display and removes all copies");
-        check(wide.sizeScale(4) == 1f && !wide.rumbleEnabled && wide.gyroscopeEnabled,
+        check(wide.sizeScale(4) == 1.3f && !wide.rumbleEnabled && wide.gyroscopeEnabled,
               "Button reset must restore sizes without changing General settings");
         while (wide.duplicate(4) >= 0) {}
         check(wide.size() == TouchLayout.MAX_CONTROLS, "Duplicate count must be bounded");
+        wide.overlayDisabled = true; wide.fieldOfView = 85f;
+        String general = wide.exportConfiguration(1f);
+        TouchLayout.Configuration settings = TouchLayout.importConfiguration(general);
+        check(settings.layout.overlayDisabled && settings.layout.fieldOfView == 85f, "Overlay and FOV must persist");
+        reject(general.replace("field-of-view=85.0", "field-of-view=NaN"));
+        reject(general.replace("field-of-view=85.0", "field-of-view=91.0"));
+        reject(general.replace("overlay-disabled=true", "overlay-disabled=invalid"));
+        settings = TouchLayout.importConfiguration(general.replaceAll("(?m)^(field-of-view|overlay-disabled)=.*\\R", ""));
+        check(!settings.layout.overlayDisabled && settings.layout.fieldOfView == 70f, "Older exports must get safe defaults");
         System.out.println("Touch layout, visibility, duplication and import/export checks passed");
     }
 

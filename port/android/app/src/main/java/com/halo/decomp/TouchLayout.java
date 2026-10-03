@@ -10,9 +10,15 @@ import java.util.Properties;
 final class TouchLayout {
     static final int LEFT = 16, FIRE_LEFT = 17;
     private static final float[][] DEFAULTS = {
-        {856,447}, {913,377}, {794,377}, {850,312}, {915,239}, {802,239},
-        {236,449}, {691,449}, {360,490}, {438,490}, {570,36}, {390,36},
-        {100,237}, {100,335}, {51,286}, {149,286}, {115,440}, {255,239}
+        {811.36505f,411.75003f}, {877.21124f,366.6001f}, {883.5595f,281.63678f},
+        {843.4512f,219.71782f}, {808.50323f,310.98508f}, {777.5762f,219.08284f},
+        {893.86035f,484.31088f}, {558.1477f,504.46585f}, {420.64713f,502.42935f},
+        {488.61844f,501.0651f}, {570,36}, {390,36}, {247.43086f,320.87274f},
+        {234.66917f,405.15228f}, {207.84561f,351.7265f}, {272.89108f,368.7666f},
+        {115.00001f,440}, {112.52527f,287.46466f}
+    };
+    private static final float[] DEFAULT_SIZES = {
+        1.1f,1.2f,1f,1f,1.3f,1f,1f,0.9f,1f,1f,1f,1f,1f,1f,1f,1f,1f,1f
     };
     private static final float[] RADII = {
         36,32,34,32,39,35,32,32,27,29,28,28,25,25,25,25,64,39
@@ -30,6 +36,9 @@ final class TouchLayout {
     private float width = 960, height = 540;
     boolean rumbleEnabled = true, gyroscopeEnabled = false, fpsCounter = false;
     float gyroscopeSensitivity = 1f;
+    boolean overlayDisabled;
+    float fieldOfView = 70f;
+    static final float MIN_FOV = 55f, MAX_FOV = 90f;
     static final float MIN_SIZE = 0.5f, MAX_SIZE = 2f;
 
     void bounds(float width, float height) {
@@ -63,8 +72,11 @@ final class TouchLayout {
 
     void resetDefaults() {
         controls.clear();
-        for (int i = 0; i < DEFAULTS.length; i++)
-            controls.add(new Control(i, DEFAULTS[i][0]*width/960, DEFAULTS[i][1]*height/540));
+        for (int i = 0; i < DEFAULTS.length; i++) {
+            Control control = new Control(i, DEFAULTS[i][0]*width/960, DEFAULTS[i][1]*height/540);
+            control.size = DEFAULT_SIZES[i];
+            controls.add(control);
+        }
         for (int i = 0; i < size(); i++) move(i, x(i), y(i));
     }
 
@@ -97,6 +109,8 @@ final class TouchLayout {
         values.setProperty("fps-counter", Boolean.toString(fpsCounter));
         values.setProperty("rumble", Boolean.toString(rumbleEnabled));
         values.setProperty("gyroscope", Boolean.toString(gyroscopeEnabled));
+        values.setProperty("overlay-disabled", Boolean.toString(overlayDisabled));
+        values.setProperty("field-of-view", Float.toString(fieldOfView));
         values.setProperty("count", Integer.toString(size()));
         values.setProperty("sensitivity", Float.toString(sensitivity));
         for (int i = 0; i < size(); i++) {
@@ -140,6 +154,12 @@ final class TouchLayout {
                 throw new IllegalArgumentException("Invalid layout settings");
             TouchLayout layout = new TouchLayout();
             layout.controls.clear();
+            if (values.containsKey("overlay-disabled")) layout.overlayDisabled = readBoolean(values, "overlay-disabled");
+            if (values.containsKey("field-of-view")) {
+                layout.fieldOfView = Float.parseFloat(values.getProperty("field-of-view"));
+                if (!Float.isFinite(layout.fieldOfView) || layout.fieldOfView < MIN_FOV || layout.fieldOfView > MAX_FOV)
+                    throw new IllegalArgumentException("Invalid field of view");
+            }
             if (!"1".equals(version)) {
                 layout.rumbleEnabled = readBoolean(values, "rumble");
                 layout.gyroscopeEnabled = readBoolean(values, "gyroscope");

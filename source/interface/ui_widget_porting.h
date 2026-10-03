@@ -16,7 +16,8 @@ static int ui_porting_get_context(void)
     struct widget_instance *menu = ui_mouse_menu();
     char const *name;
     name = menu ? tag_get_name(menu->definition_tag_index) : NULL;
-    if (main_menu_screen_is_active() || (name && !strcmp(name, "ui\\shell\\main_menu\\main_menu"))) return 1;
+    if (main_menu_screen_is_active() || (name &&
+        (!strcmp(name, "ui\\shell\\main_menu\\main_menu") || !strcmp(name, "pc\\main_menu\\main_menu")))) return 1;
     if (name && strstr(name, "\\pause_game\\")) return 2;
     return 0;
 }
@@ -63,7 +64,8 @@ static void ui_porting_prepare(void)
     }
 }
 
-/* Enlarge the pause frame and its touch targets by 12%. Definitions are copied
+/* Extend the pause frame below Porting options, then enlarge it and its touch
+   targets by 12%. Definitions are copied
    for this draw; imported tags and widget history remain untouched. */
 static boolean ui_porting_adjust_widget(struct widget_instance *widget,
     struct ui_widget_definition **definition, struct ui_widget_definition *copy, point2d *offset)
@@ -83,14 +85,14 @@ static boolean ui_porting_adjust_widget(struct widget_instance *widget,
     if (ui_porting_context != 2) return TRUE;
     *copy = **definition;
     if (!strcmp(leaf, "pause_dialog_bkd") || !strncmp(leaf, "pausebox", 8)) {
-        copy->bounds.y1 += 38;
+        copy->bounds.y1 += 52;
     }
     for (ancestor = widget; ancestor; ancestor = ancestor->parent) {
         name = tag_get_name(ancestor->definition_tag_index);
         leaf = name ? strrchr(name, '\\') : NULL;
         leaf = leaf ? leaf+1 : name;
         if (leaf && !strncmp(leaf, "button_key", 10)) {
-            offset->y += 38;
+            offset->y += 52;
             break;
         }
     }
@@ -154,7 +156,7 @@ static void ui_porting_text(struct widget_instance *style, char const *text, rec
     wchar_t wide[96];
     point2d offset = {0, 0};
     rectangle2d scaled_clip = *clip;
-    int percent = ui_porting_menu.page ? 160 : ui_porting_context == 2 ? 125 : 115;
+    int percent = ui_porting_menu.page ? 160 : 125;
     ascii_to_wide(text, wide, sizeof(wide));
     definition.bounds = bounds;
     definition.bounds.x1 = bounds.x0 + (bounds.x1-bounds.x0)*100/percent;
@@ -167,6 +169,11 @@ static void ui_porting_text(struct widget_instance *style, char const *text, rec
     definition.text_color.red = 0.85f;
     definition.text_color.green = 0.94f;
     definition.text_color.blue = 1.0f;
+    if (!ui_porting_menu.page && ui_porting_context == 1) {
+        definition.text_color.red = 0.0f;
+        definition.text_color.green = 128.0f/255.0f;
+        definition.text_color.blue = 1.0f;
+    }
     definition.justification = 2;
     if (heading) {
         definition.text_color.red = 0.35f;

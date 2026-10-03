@@ -46,52 +46,43 @@ Touch controls merge with the first physical controller for player 1.
 Bluetooth and USB controllers still work, including additional players.
 Touch inputs are released when you hide the controls or leave the app.
 
-### Options and General
+### Porting options
 
-The main menu build label displays **FulGer** regardless of the imported disc
-version. Tap the circular, white-outline **Options** button. The menu contains
-**General**, **Edit buttons layout**, **Look sensitivity** and **Cheats**.
+The main menu and the game pause menu include **Porting options**, with
+**Overlay settings**, **General** and **Cheats**. The main-menu entry is
+blue and slightly larger; the pause frame extends below its extra entry.
 
-**General** includes:
+**Overlay settings** lets you move, hide, add, duplicate and resize controls,
+adjust swipe look sensitivity, or select **Disable all overlay**. That toggle
+hides every Android overlay, including **Hide/Touch** and FPS. Direct menu
+taps and physical controllers remain available; use Porting options to restore
+the overlay. Opening the layout editor also restores it for editing.
+**Reset all buttons** restores the supplied October 3 layout and sizes.
+Existing saved layouts are retained until reset. **Export** and **Import** use
+Android's document picker for `.halolayout` files.
 
-- **Rumble**: enabled by default. The smartphone vibrates when the game sends
-  player 1's rumble effects, even without a connected controller or when the
-  imported Xbox profile has controller vibration disabled. Vibration
-  uses Android's game audio attributes and a perceptible minimum amplitude;
-  stronger motor effects increase intensity on phones with amplitude control. Turning it
-  off or leaving the app stops the phone vibration. Controller rumble is retained.
-- **Gyroscope aim (Experimental)**: disabled by default. Rotate the phone to
-  adjust yaw and pitch alongside touch aiming. Vertical tilt follows the phone
-  without inverted up/down movement. Both landscape orientations work;
-  motion is suspended in Options, the layout editor and while the app is unfocused.
-  It uses the look sensitivity setting. The toggle is unavailable without a gyroscope.
-- **Hide or add buttons**: show/hide individual controls, add buttons or duplicate
-  action buttons. **Reset** restores original positions, visibility and sizes and
-  removes copies. Each duplicate keeps its game action and has its own position
-  and size. The movement stick can be hidden or restored.
-- **Edit buttons size**: every original control and duplicate appears in a list,
-  including hidden controls, with **Ã¢Ë†â€™**, **+** and a percentage value. Sizes
-  range from 50% to 200% in 10-point steps. The drawing and touch area resize
-  together; the movement stick's range and thumb resize with it.
+**General** contains **Rumble**, **Gyroscope**, independent **Gyroscope
+sensitivity**, **FPS counter** and **Field of view (FOV)**. FOV ranges from
+55 to 90 degrees (70 by default, measured in the engine's 4:3 camera space);
+the wider display expands horizontal view as usual, and weapon zoom is retained.
+Rumble defaults on; gyro and FPS default off. Sensitivity sliders range from
+0.25x to 4x; control sizes range from 50% to 200%.
 
-**Edit buttons layout** lets you drag visible controls to the edges of the full
-display, then tap **Save and exit**. **Export** and **Import** open a popup and
-Android's document picker so you choose the destination folder/filename or a
-saved `.halolayout` file. The version 2 configuration includes positions,
-visibility, duplicates, individual sizes, look sensitivity, Rumble and Gyroscope
-settings. Version 1 files still import with original sizes, Rumble enabled and
-Gyroscope disabled. Invalid files leave the current configuration unchanged.
+**Cheats** in the main menu selects **Startup cheats**. All sixteen start off.
+Selections are saved as executable commands in a marked section of
+`init.txt` under `/sdcard/Android/data/com.halo.decomp/files/`; other file
+contents are preserved. Flags apply when a player spawns at the start of each
+map, and selected instant actions run once per map. Teleport waits for a valid
+camera. These settings also survive app restarts. In the game pause menu,
+Cheats retains its existing live toggles and repeatable instant actions and
+never edits `init.txt`. Network clients retain the host's rules.
 
-**Look sensitivity** adjusts both swipe and gyroscope aiming from 0.25x to 4x.
-**Cheats** includes the ten built-in cheat switches and six instantaneous actions
-from Halo CE's prototype `init.txt` / `cheats.txt`. Only enabled switches become
-green. Instant actions remain neutral and can be repeated. Cheats require an
-active player; network clients follow the host's rules. Objects available from
-spawn cheats depend on the current map.
-
-Settings are saved for the next launch. Clearing app data resets them. The game
-continues while editing the controls, so pause first if needed. Gyroscope and
-phone rumble still need gameplay verification on real Android hardware.
+Version 3 layout exports include positions, visibility, copies, sizes, swipe
+and gyro sensitivity, rumble, gyro, FPS, FOV and the global overlay toggle.
+Older exports remain supported; missing FOV and overlay settings default to
+70 degrees and enabled overlays. Startup cheats stay in `init.txt`, separate
+from layout exports. Phone rumble, gyro and final GPU presentation require
+verification on Android hardware.
 
 ## Build
 
@@ -126,6 +117,10 @@ Run the layout, file compatibility and gyroscope regression checks with:
 
 ```sh
 python tools/test_touch_layout.py
+python tools/test_porting_actions.py
+python tools/test_menu_touch.py
+python tools/test_porting_ui.py
+python tools/test_startup_cheats_engine.py
 ```
 
 ## Android-only source layout

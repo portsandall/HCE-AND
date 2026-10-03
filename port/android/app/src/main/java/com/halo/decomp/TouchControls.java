@@ -99,6 +99,8 @@ public final class TouchControls extends View implements SensorEventListener {
     private static native void nativeLookReset();
     private static native boolean nativeCheatRequest(int id, boolean enabled);
     private static native int nativeCheatStatus(int id);
+    private static native void nativeFieldOfView(float degrees);
+    private StartupCheats startupCheats;
     private int dragPointer = -1, dragControl = -1;
     private float dragOffsetX, dragOffsetY;
     private float scale = 1, offsetX, offsetY;
@@ -120,6 +122,13 @@ public final class TouchControls extends View implements SensorEventListener {
             vibrator = manager == null ? null : manager.getDefaultVibrator();
         } else vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         preferences = context.getSharedPreferences("touch-layout-v1", Context.MODE_PRIVATE);
+        try {
+            java.io.File folder = context.getExternalFilesDir(null);
+            if (folder == null) throw new java.io.IOException("Game storage is unavailable");
+            startupCheats = new StartupCheats(new java.io.File(folder, "init.txt").toPath());
+        } catch (java.io.IOException e) {
+            Toast.makeText(context, "Cannot read init.txt: "+e.getMessage(), Toast.LENGTH_LONG).show();
+        }
         String configuration = preferences.getString("configuration", null);
         if (configuration != null) {
             try {
@@ -184,7 +193,7 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private void publish() {
-        if (editing || (menusActive && (!menuOverlayVisible || menuPage != 0))) {
+        if (layout.overlayDisabled || editing || (menusActive && (!menuOverlayVisible || menuPage != 0))) {
             nativeState(0, 0, 0, 0, 0, 0, 0);
             return;
         }
@@ -212,7 +221,7 @@ public final class TouchControls extends View implements SensorEventListener {
         if (editing && inside(x, y, optionsX(), toolbarY(), 34)) return EDIT;
         if (editing && inside(x, y, optionsX()-156, toolbarY(), 34)) return EXPORT;
         if (editing && inside(x, y, optionsX()-78, toolbarY(), 34)) return IMPORT;
-        if (inside(x, y, logicalWidth/2, toolbarY(), 28)) return TOGGLE;
+        if (!layout.overlayDisabled && inside(x, y, logicalWidth/2, toolbarY(), 28)) return TOGGLE;
         if (!overlayVisible()) return Integer.MIN_VALUE;
         for (int i = 0; i < layout.size(); i++) {
             if (!layout.shown(i) || layout.type(i) == LEFT) continue;
@@ -265,7 +274,7 @@ public final class TouchControls extends View implements SensorEventListener {
                 owners.put(id, control);
                 if (control >= 0 && layout.type(control) == LEFT) moveStick(control, x, y);
                 else buttonTouches.put(id, new float[]{event.getX(index), event.getY(index)});
-            } else if (!menusActive && visible && lookPointer < 0) {
+            } else if (!layout.overlayDisabled && !menusActive && visible && lookPointer < 0) {
                 lookPointer = id; lookX = event.getX(index); lookY = event.getY(index);
                 owners.put(id, LOOK);
             }
@@ -312,7 +321,7 @@ public final class TouchControls extends View implements SensorEventListener {
             int p = event.findPointerIndex(menuPointer);
             if (p < 0 || menuGesturePage != menuPage) return true;
             float px = event.getX(p), py = event.getY(p);
-            if (menuPage == 4 || menuPage == 5 || menuPage == 12) {
+            if (menuPage == 4 || menuPage == 5 || menuPage == 12 || menuPage == 13) {
                 nativeMenuPointer(px/getWidth(), py/getHeight(), true, false, 0, false);
                 menuScrolled = true;
             } else if (menuPage != 0) {
@@ -426,8 +435,19 @@ public final class TouchControls extends View implements SensorEventListener {
         // Release overlay buttons before switching to a custom page.
         if (owners.size() != 0) reset();
         if (action >= 3000) {
-            int id = action-3000, status = nativeCheatStatus(id);
-            if (status != -2) nativeCheatRequest(id, id >= 10 || status != 1);
+            int id = action-3000;
+            if (id < 0 || id >= CHEATS.length) return;
+            if (menuContext == 1) {
+                try {
+                    if (startupCheats == null) throw new java.io.IOException("Game storage is unavailable");
+                    startupCheats.toggle(id);
+                } catch (java.io.IOException e) {
+                    Toast.makeText(getContext(), "Cannot save init.txt: "+e.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            } else {
+                int status = nativeCheatStatus(id);
+                if (status != -2) nativeCheatRequest(id, id >= 10 || status != 1);
+            }
         } else if (action >= 2000) {
             if (layout.add(action-2000) < 0)
                 Toast.makeText(getContext(), "Control limit reached or movement stick already visible.", Toast.LENGTH_SHORT).show();
@@ -438,11 +458,16 @@ public final class TouchControls extends View implements SensorEventListener {
         } else if (action == 90) {
             if (menuPage == 1) menuPage = 0;
             else if (menuPage == 2 || menuPage == 3 || menuPage == 6) menuPage = 1;
-            else if (menuPage == 5) menuPage = 3;
+            else if (menuPage == 5 || menuPage == 13) menuPage = 3;
             else if (menuPage == 9 || menuPage == 10 || menuPage == 11) menuPage = 7;
             else if (menuPage == 12) menuPage = 8;
             else menuPage = 2;
-        } else if (action == 12) { editing = true; visible = true; reset(); updateSensors(); }
+        } else if (action == 12) { layout.overlayDisabled = false; saveLayout(); editing = true; visible = true; reset(); updateSensors(); }
+        else if (action == 33) { layout.overlayDisabled = !layout.overlayDisabled; reset(); saveLayout(); }
+        else if (action == 43) {
+            layout.fieldOfView = TouchLayout.MIN_FOV+Math.max(0, Math.min(1000, value))*(TouchLayout.MAX_FOV-TouchLayout.MIN_FOV)/1000;
+            nativeFieldOfView(layout.fieldOfView); saveLayout();
+        }
         else if (action == 20) { layout.setShown(selectedControl, !layout.shown(selectedControl)); saveLayout(); }
         else if (action == 21) {
             if (layout.duplicate(selectedControl) < 0)
@@ -470,17 +495,23 @@ public final class TouchControls extends View implements SensorEventListener {
         };
         String title = "Porting options";
         if (menuPage == 1) {
-            row.accept("Overlay settings", 2); row.accept("Hardware", 3); row.accept("Cheats", 6);
+            row.accept("Overlay settings", 2); row.accept("General", 3); row.accept("Cheats", 6);
         } else if (menuPage == 2) {
             title = "Overlay settings";
             row.accept("Edit buttons layout", 12); row.accept("Hide or add buttons", 7);
             row.accept("Edit buttons size", 8); row.accept("Look sensitivity", 4);
+            row.accept("Disable all overlay: "+(layout.overlayDisabled ? "ON" : "OFF"), 33);
         } else if (menuPage == 3) {
-            title = "Hardware";
+            title = "General";
             row.accept("Rumble: "+(vibrator == null || !vibrator.hasVibrator() ? "unavailable" : layout.rumbleEnabled ? "ON" : "OFF"),
                 vibrator == null || !vibrator.hasVibrator() ? 0 : 30);
             row.accept("Gyroscope: "+(gyroscope == null ? "unavailable" : layout.gyroscopeEnabled ? "ON" : "OFF"), gyroscope == null ? 0 : 31);
             row.accept("Gyroscope sensitivity", 5); row.accept("FPS counter: "+(layout.fpsCounter ? "ON" : "OFF"), 32);
+            row.accept("Field of view (FOV)", 13);
+        } else if (menuPage == 13) {
+            title = "Field of view (FOV)";
+            row.accept(String.format(java.util.Locale.US, "FOV: %.0f degrees", layout.fieldOfView), 43);
+            values.set(0, Math.round((layout.fieldOfView-TouchLayout.MIN_FOV)/(TouchLayout.MAX_FOV-TouchLayout.MIN_FOV)*1000));
         } else if (menuPage == 4 || menuPage == 5 || menuPage == 12) {
             boolean size = menuPage == 12;
             title = size ? "Edit buttons size" : menuPage == 4 ? "Look sensitivity" : "Gyroscope sensitivity";
@@ -489,8 +520,12 @@ public final class TouchControls extends View implements SensorEventListener {
                 size ? controlName(layout.type(selectedControl)) : title, size ? amount*100 : amount), size ? 42 : menuPage == 4 ? 40 : 41);
             values.set(0, Math.round((amount-(size ? 0.5f : 0.25f))/(size ? 1.5f : 3.75f)*1000));
         } else if (menuPage == 6) {
-            title = "Cheats";
+            title = menuContext == 1 ? "Startup cheats" : "Cheats";
             for (int i = 0; i < CHEATS.length; i++) {
+                if (menuContext == 1) {
+                    row.accept(CHEATS[i]+(startupCheats != null && startupCheats.enabled(i) ? " [ON]" : " [OFF]"), startupCheats == null ? 0 : 3000+i);
+                    continue;
+                }
                 int status = nativeCheatStatus(i);
                 row.accept(CHEATS[i]+(status == -2 ? " ..." : status == -1 ? " (unavailable)" : i < 10 ? status == 1 ? " [ON]" : " [OFF]" : " (instant)"), 3000+i);
             }
@@ -535,7 +570,7 @@ public final class TouchControls extends View implements SensorEventListener {
                 .putFloat("look-sensitivity", imported.sensitivity).putBoolean("swipe-layout", true).commit())
             throw new IllegalArgumentException("Could not save imported layout");
         reset(); layout = imported.layout; sensitivity = imported.sensitivity;
-        visible = true; updateSensors(); cancelRumble(); invalidate();
+        visible = true; nativeFieldOfView(layout.fieldOfView); updateSensors(); cancelRumble(); invalidate();
     }
 
     private String controlName(int type) { return type == LEFT ? "Move stick" : buttons[type].label; }
@@ -543,6 +578,7 @@ public final class TouchControls extends View implements SensorEventListener {
     public void startDeviceInput() {
         if (deviceInputActive) return;
         deviceInputActive = true;
+        nativeFieldOfView(layout.fieldOfView);
         gyroAim.reset(); updateSensors(); post(rumblePoll); post(menuPoll);
     }
 
@@ -604,10 +640,11 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private boolean overlayVisible() {
-        return editing || (menusActive ? menuOverlayVisible : visible);
+        return !layout.overlayDisabled && (editing || (menusActive ? menuOverlayVisible : visible));
     }
 
     @Override protected void onDraw(Canvas canvas) {
+        if (layout.overlayDisabled) return;
         if (layout.fpsCounter && !menusActive && !editing) {
             paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
             paint.setTextAlign(Paint.Align.LEFT); paint.setTextSize(18*scale);

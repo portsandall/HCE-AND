@@ -94,6 +94,9 @@ jobs:
       - name: Touch layout tests
         run: python3 tools/test_touch_layout.py
 
+      - name: Porting menu action tests
+        run: python3 tools/test_porting_actions.py
+
       - name: Menu touch gesture tests
         run: python3 tools/test_menu_touch.py
 

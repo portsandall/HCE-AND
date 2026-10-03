@@ -51,7 +51,8 @@ def main():
     for source, destination in [
         ("extract-xiso/LICENSE.TXT", "extract-xiso-LICENSE.txt"),
         ("miniupnpc/LICENSE", "miniupnpc-LICENSE.txt"),
-        ("stb/LICENSE", "stb-LICENSE.txt")
+        ("stb/LICENSE", "stb-LICENSE.txt"),
+        ("expat/COPYING", "expat-COPYING.txt")
     ]:
         shutil.copy2(ROOT / "port/third_party" / source, dist / destination)
 

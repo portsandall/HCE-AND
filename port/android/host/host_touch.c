@@ -19,6 +19,26 @@ static float ui_point[6]; /* normalized x/y, click, back, scroll, scrollbar */
 static struct halo_porting_menu porting_menu;
 static int frame_count, frame_fps;
 static struct timespec frame_time;
+static float field_of_view = 70.0f;
+
+JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeFieldOfView(
+    JNIEnv *env, jclass cls, jfloat degrees)
+{
+    (void)env; (void)cls;
+    if (!(degrees >= 55.0f && degrees <= 90.0f)) return;
+    pthread_mutex_lock(&touch_lock);
+    field_of_view = degrees;
+    pthread_mutex_unlock(&touch_lock);
+}
+
+float host_touch_field_of_view(void)
+{
+    float degrees;
+    pthread_mutex_lock(&touch_lock);
+    degrees = field_of_view;
+    pthread_mutex_unlock(&touch_lock);
+    return degrees;
+}
 
 void host_touch_ui_context(int menus, int context)
 {

@@ -41,6 +41,7 @@ public class MenuTouchTest {
  Owners owners=new Owners();
  Map<Integer,float[]> buttonTouches=new HashMap<>();
  static class Layout {
+  boolean overlayDisabled;
   int size(){return 2;} boolean shown(int i){return true;}
   int type(int i){return i==1?LEFT:0;}
   float x(int i){return i==1?100:800;} float y(int i){return 400;}
@@ -86,12 +87,19 @@ code += r'''
   t.menuPage=4;t.pointerClicks=0;
   t.event(0,320,220);t.event(2,340,220);t.revision++;t.event(2,380,220);t.event(1,380,220);
   check(t.pointerClicks==2,"Value slider must continue dragging across acknowledgement revisions");
+  t.menuPage=13;t.pointerClicks=0;
+  t.event(0,320,220);t.event(2,340,220);t.revision++;t.event(2,380,220);t.event(1,380,220);
+  check(t.pointerClicks==2,"FOV slider must support continuous drag");
   t.menuPage=6;t.pointerClicks=0;
   t.event(0,320,220);t.revision++;t.event(1,320,220);
   check(t.pointerClicks==0,"Stale tap must not select a different page");
   t.menuPage=0;t.tap(480,38);t.event(0,800,400);t.event(3,800,400);
   check(t.stateBits==0 && t.owners.size()==0,"Cancellation must release controller buttons");
   t.editing=true;t.menuOverlayVisible=false;check(t.overlayVisible(),"Layout editor must always show controls");
+  t.editing=false;t.layout.overlayDisabled=true;t.menuPage=0;t.pointerClicks=0;
+  t.tap(480,38);check(t.pointerClicks==1 && !t.overlayVisible(),"Disabled Hide/Touch area must route to the native menu");
+  t.stateBits=9;t.publish();check(t.stateBits==0,"Disabled overlay must release gameplay input");
+  t.menusActive=false;t.tap(800,400);check(t.stateBits==0 && t.lookPointer==-1,"Disabled controls cannot press buttons or aim");
   System.out.println("Menu touch toggle, direct taps, overlay buttons, scrolling, slider drag and cancellation passed");
  }
 }

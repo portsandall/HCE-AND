@@ -80,6 +80,10 @@ static int ui_porting_scroll,ui_porting_scroll_max;
 static rectangle2d ui_porting_bounds[HALO_PORTING_ROWS];
 static int ui_porting_actions[HALO_PORTING_ROWS];
 static struct widget_instance fixture;
+static struct widget_instance *ui_widget_port_error_text_box;
+static wchar_t *ui_widget_port_error_text;
+#define SPINNER_EXTRA_DESCRIPTION_BASE 1000
+static wchar_t const *kills_to_win_extra_descriptions[] = {0};
 struct ui_mouse_target {int kind; struct widget_instance *widget; rectangle2d bounds;};
 #define _ui_mouse_target_item 0
 static struct ui_mouse_target ui_mouse_targets[4];
@@ -91,7 +95,7 @@ void ui_play_audio_feedback_sound(int sound){}
 void draw_quad(rectangle2d *bounds,unsigned long color){}
 static struct {long current_system_milliseconds;} widget_globals;
 static void *widget_memory_pool;
-static int glyphs,percent,background_fixture,background_drawn;
+static int glyphs,percent,draw_percent,background_fixture,background_drawn;
 static real_argb_color current_color;
 static rectangle2d background_bounds;
 struct bitmap_data {int unused;};
@@ -114,7 +118,11 @@ real_argb_color get_ui_argb_white(void){real_argb_color c={1,1,1,1};return c;}
 void draw_string_set_draw_mode(long f,short s,short j,unsigned long flags,real_argb_color const*c){current_color=*c;last_justification=j;}
 void draw_string_set_tab_stops(short const*p,short n){}
 void draw_string_set_indents(short a,short b){}
-void rasterizer_text_set_ui_scale(int x,int y,int p){percent=p;}
+void rasterizer_text_set_ui_scale(int x,int y,int p){percent=p;if(p!=100)draw_percent=p;}
+int strcmp(char const*a,char const*b){while(*a&&*a==*b){++a;++b;}return *a-*b;}
+char *strrchr(char const*s,int c){char *last=NULL;for(;*s;++s)if(*s==c)last=(char*)s;return last;}
+int strncmp(char const*a,char const*b,unsigned long n){while(n&&*a&&*a==*b){++a;++b;--n;}return n?*a-*b:0;}
+char const *tag_get_name(long tag){return tag==42?"ui\\shell\\pause_game\\pause_dialog_bkd":"ui\\shell\\pause_game\\button_key";}
 void rasterizer_draw_unicode_string(rectangle2d const*b,rectangle2d const*c,point2d*p,short h,wchar_t const*s){
  if(current_color.alpha>0 && b->y0+17<b->y1 && b->x0<b->x1 && c->x0<c->x1 && c->y0<c->y1)glyphs+=(int)ustrlen(s);
 }
@@ -135,6 +143,7 @@ code = prefix + '\n' + '\n'.join([
     function('source/interface/ui_widget.c','widget_instance_get_cumulative_alpha_modifier'),
     function('source/interface/ui_widget.c','widget_instance_render_text_box'),
     function('source/interface/ui_widget_porting.h','ui_porting_text'),
+    function('source/interface/ui_widget_porting.h','ui_porting_adjust_widget'),
     function('source/interface/ui_widget_porting.h','ui_porting_background'),
     function('source/interface/ui_widget_porting.h','ui_porting_pointer'),
     function('source/interface/ui_widget_porting.h','ui_porting_render'),
@@ -147,6 +156,11 @@ int run_tests(void){
  ui_porting_context=1;ui_porting_menu.page=0;glyphs=0;
  ui_porting_text(&style,"Porting options",row,&clip,TRUE,FALSE);
  if(glyphs!=15||current_color.alpha!=1||percent!=100||last_justification!=2)return 1;
+ if(draw_percent!=125||current_color.red!=0||current_color.green!=128.f/255.f||current_color.blue!=1)return 14;
+ ui_porting_context=2;
+ struct widget_instance background={0};struct ui_widget_definition copy,*def=&template;point2d offset={320,240};
+ background.parent=&parent;background.definition_tag_index=42;template.bounds.y1=200;
+ if(!ui_porting_adjust_widget(&background,&def,&copy,&offset)||copy.bounds.y1!=(200+52)*112/100)return 15;
  ui_porting_context=2;row.y0=286;row.y1=313;glyphs=0;
  ui_porting_text(&style,"Overlay settings",row,&clip,TRUE,FALSE);
  if(glyphs!=16||current_color.alpha!=1)return 2;
@@ -160,7 +174,7 @@ int run_tests(void){
   if(!background_drawn||background_bounds.x0!=-214||background_bounds.x1!=854||background_bounds.y0!=0||background_bounds.y1!=480)return 5;
  }
  row.y0=60;row.y1=108;
- ui_porting_text(&style,"Hardware",row,&clip,TRUE,TRUE);
+ ui_porting_text(&style,"General",row,&clip,TRUE,TRUE);
  if(current_color.red!=0.35f||current_color.green!=0.8f)return 6;
  ui_porting_menu.count=65;ui_porting_menu.revision=8;
  for(int i=0;i<64;++i){memcpy(ui_porting_menu.rows[i].text,"Fire",5);ui_porting_menu.rows[i].action=1000+i;ui_porting_menu.rows[i].value=-1;}

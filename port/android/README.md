@@ -109,17 +109,18 @@ keyboard used for names. The game maps touch positions through the same
 letterboxing and widescreen centering as the renderer. Android Back returns
 to the previous screen. Taps on empty left/right screen edges select the
 previous/next item using the current list's direction, including mission
-selection and option lists. **Touch/Hide** remains visible in every menu and
-in gameplay. Menus start with the controller hidden; **Touch** restores its
+selection and option lists. **Touch/Hide** remains visible in menus and gameplay unless
+**Disable all overlay** is enabled. Menus start with the controller hidden; **Touch** restores its
 buttons and movement stick for screens that need them. Swipe aiming, phone
 rumble and gyro aim stop while a game menu is open.
 
 ### Porting options (3.0)
 
 The main menu adds **Porting options** beneath Campaign, Multiplayer and
-Settings, centered with the other choices and enlarged to 115%. The pause
+Settings, centered with the other choices and enlarged to 125% with the main
+menu's blue color. The pause
 menu also adds a single **Porting options** entry containing **Overlay
-settings**, **Hardware** and **Cheats**. Its frame, original text and touch
+settings**, **General** and **Cheats**. Its frame, original text and touch
 targets are enlarged by 12%. These screens are rendered by Halo,
 using the menu font and colors from the loaded map's widget definitions.
 The engine extends `ui.map` and the level pause UI at runtime; imported map
@@ -137,7 +138,10 @@ scaling is scoped to glyph vertices and resets after each label. The blue UI
 bitmap is selected from the current map and fills the entire widescreen area.
 
 - **Overlay settings** contains **Edit buttons layout**, **Hide or add
-  buttons**, **Edit buttons size** and **Look sensitivity**. Layout editing
+  buttons**, **Edit buttons size**, **Look sensitivity** and **Disable all overlay**. The
+  global toggle also hides Hide/Touch and FPS and releases held inputs. Direct
+  menu taps and physical controllers still work. The default positions and
+  sizes match the supplied October 3 layout; Reset restores them. Layout editing
   shows the controls for dragging while keeping the current game menu open
   and the campaign paused. Tap **Save and exit** to return to Overlay settings.
   **Export** and **Import** retain Android's document picker. The button
@@ -145,20 +149,27 @@ bitmap is selected from the current map and fills the entire widescreen area.
   the movement stick. Reset requires confirmation. Size sliders range from
   50% to 200%; look sensitivity ranges from 0.25x to 4x. All controls,
   including copies, can be reached by scrolling without Previous/Next pages.
-- **Hardware** contains **Rumble**, **Gyroscope**, **Gyroscope sensitivity**
-  and **FPS counter**. Unsupported hardware is marked unavailable. Rumble
+- **General** contains **Rumble**, **Gyroscope**, **Gyroscope sensitivity**,
+  **FPS counter** and **Field of view (FOV)**. FOV uses a 55–90 degree slider
+  with a 70 degree default, preserves weapon zoom and is saved for both menus.
+  Unsupported hardware is marked unavailable. Rumble
   defaults on, gyro and FPS default off. Gyro sensitivity has its own
   horizontal slider from 0.25x to 4x, independent of swipe look sensitivity.
   Gyro handles both landscape orientations. FPS measures presented game
   frames over half-second intervals and displays during gameplay.
-- **Cheats** retains all ten engine flags and six instant actions. Enabled
+- **Cheats** in the main menu selects startup cheats in a dedicated `init.txt`
+  block, with all sixteen disabled initially and other file contents preserved.
+  Flags apply after player spawn; instant actions run once per map (teleport
+  waits for a valid camera). The pause menu retains all ten live engine flags
+  and six instant actions and never edits the startup file. Enabled
   flags have green rows; instant actions remain repeatable. Requests and
   displayed states follow the existing engine acknowledgement path. Cheats
   require an active player; network clients retain the host's existing rules.
   Available spawned objects depend on the current map.
 
 Version 3 `.halolayout` files also preserve gyro sensitivity and the FPS
-preference. Version 1 and 2 layouts remain supported; their gyro sensitivity
+preference, FOV and Disable all overlay. Missing new settings use 70 degrees
+and enabled overlays. Startup cheats are separate from layout exports. Version 1 and 2 layouts remain supported; their gyro sensitivity
 defaults to 1x and FPS to off. Version 1 retains its default button sizes,
 Rumble on and Gyroscope off. Clearing app data clears the saved settings.
 

@@ -501,16 +501,25 @@ real player_control_get_field_of_view(
 			control->unit_index,
 			unit->unit.current_weapon_index);
 
+		real base_field_of_view = definition->unit.camera_field_of_view;
+#ifdef HALO_ANDROID
+		{
+			extern float host_touch_field_of_view(void);
+			base_field_of_view = PIN(base_field_of_view * host_touch_field_of_view()/70.0f,
+				DEGREES_TO_RADIANS(1.f), DEGREES_TO_RADIANS(90.f));
+		}
+#endif
+
 		if (weapon_index != NONE)
 		{
 			field_of_view = weapon_get_field_of_view(
 				weapon_index,
-				definition->unit.camera_field_of_view,
+				base_field_of_view,
 				control->zoom_level);
 		}
 		else
 		{
-			field_of_view = definition->unit.camera_field_of_view;
+			field_of_view = base_field_of_view;
 		}
 	}
 	return field_of_view;
@@ -1387,6 +1396,20 @@ static void get_local_player_input_blob(
 					input->unit_control_flags,
 					_unit_control_action_bit,
 					effective_buttons[_button_action_reload]);
+				/* port: the keyboard's reload key (port/linux/include/
+				halo_keyboard.h), which the controller's X shares with the
+				action */
+				if (!TEST_FLAG(control->inhibited_button_bit_vector, _button_action_reload) &&
+					input_abstraction_port_reload(gamepad_index))
+				{
+					SET_FLAG(input->unit_control_flags, _unit_control_weapon_reload_bit, TRUE);
+				}
+				/* port: and its action key acts only, never reloading */
+				if (TEST_FLAG(input->unit_control_flags, _unit_control_action_bit) &&
+					input_abstraction_port_action_only(gamepad_index))
+				{
+					SET_FLAG(input->unit_control_flags, UNIT_CONTROL_PORT_ACTION_ONLY_BIT, TRUE);
+				}
 				SET_FLAG(
 					input->unit_control_flags,
 					_unit_control_swap_weapons_bit,
@@ -1424,6 +1447,9 @@ static void get_local_player_input_blob(
 					_button_action_reload))
 				{
 					input->accept = gamepad->buttons[_gamepad_analog_button_a];
+					/* port: and the keyboard's jump key */
+					if (!input->accept)
+						input->accept = input_abstraction_port_accept(gamepad_index);
 				}
 			}
 		}
