@@ -21,9 +21,12 @@ link games as if they were on one LAN, without a server of this project's.
   each, and never travels.
 - The tunnel is one UDP socket. Each machine learns its public address from
   public STUN servers, and both then send to each other's addresses until
-  packets get through (hole punching). There is no relay: two machines whose
-  NATs both map every destination to a new port cannot connect, unless a
-  router forwards one of them a port. So a host asks its router to forward
+  packets get through (hole punching). With network.relay_fallback enabled,
+  strict/mobile NATs can instead use the existing encrypted tunnel through
+  MQTT on session-specific directional topics. Public brokers are test
+  services; a private broker is recommended for sustained play. UDP keeps
+  being probed while relayed, and takes over as soon as it works. A host
+  also asks its router to forward
   the tunnel's port (UPnP, posix_upnp.c) as soon as a player reaches out
   with its invite, and a joiner asks its own when it has not reached the
   host in a few seconds (network.allow_upnp); the forwarded port is one more
@@ -190,6 +193,7 @@ struct peer
 	unsigned long heard_time;
 	unsigned long endpoint_heard_time;
 	unsigned long sent_time;
+	unsigned long probe_time;
 	unsigned long round_trip;
 };
 
@@ -328,6 +332,7 @@ static struct
 
 	/* joining: until the host is reached, or JOIN_TIMEOUT */
 	int join_requested;
+	int join_error;
 	int joining;
 	unsigned char join_host[P2P_IDENTIFIER_SIZE];
 	unsigned char join_host_hash[P2P_KEY_HASH_SIZE];
@@ -752,7 +757,7 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 	int sealed;
 	int index;
 
-	if (p2p.tunnel_socket < 0 || size > MAXIMUM_INNER_SIZE)
+	if (p2p.tunnel_socket < 0 || size < 1 || size > MAXIMUM_INNER_SIZE)
 		return;
 	/* the header, authenticated with the rest */
 	counter = ++peer->send_counter;
@@ -763,6 +768,11 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 	packet_nonce(packet, nonce);
 	sealed = p2p_aead_seal(peer->send_key, nonce, packet, TUNNEL_HEADER_SIZE, inner, size,
 		packet + TUNNEL_HEADER_SIZE);
+	if (!to->address && !to->port)
+	{
+		p2p_signal_relay_send(peer->identifier, packet, TUNNEL_HEADER_SIZE + sealed);
+		return;
+	}
 	make_address(&address, to->address, to->port);
 	posix_socket_sendto(p2p.tunnel_socket, packet, TUNNEL_HEADER_SIZE + sealed, 0, &address, sizeof(address));
 }
@@ -849,6 +859,7 @@ static void drop_peer(struct peer *peer, const char *reason)
 
 		peer_send(peer, &bye, 1);
 	}
+	p2p_signal_relay_remove(peer->identifier);
 	release_peer_links((int)(peer - p2p.peers), 0);
 	/* a session that ended does not come back: its packets would pass
 	again */
@@ -970,6 +981,7 @@ int p2p_peer_offered(const unsigned char *peer_identifier, const unsigned char *
 		peer->virtual_address = virtual_address_for(peer_identifier);
 		peer->is_host = is_host;
 		peer->offered_time = p2p_now();
+		p2p_signal_relay_add(peer->identifier, peer->send_key, peer->receive_key);
 		platform_log("Internet play: reaching %s %s", is_host ? "host" : "player", peer->name);
 	}
 	add_candidates(peer, candidates, count);
@@ -1028,7 +1040,7 @@ static void peer_heard(struct peer *peer, unsigned long address, unsigned short 
 		peer->endpoint.port = port;
 		peer->endpoint_heard_time = now;
 		platform_log("Internet play: connected to %s %s at %s", peer->is_host ? "host" : "player", peer->name,
-			address_text(address, port, text));
+			address ? address_text(address, port, text) : "encrypted relay");
 		if (peer->is_host)
 		{
 			if (p2p.joining && !memcmp(p2p.join_host, peer->identifier, P2P_IDENTIFIER_SIZE))
@@ -1043,7 +1055,7 @@ static void peer_heard(struct peer *peer, unsigned long address, unsigned short 
 	{
 		peer->endpoint_heard_time = now;
 	}
-	else if (newest && elapsed(peer->endpoint_heard_time, ENDPOINT_SWITCH_TIME))
+	else if (newest && ((address && !peer->endpoint.address) || elapsed(peer->endpoint_heard_time, ENDPOINT_SWITCH_TIME)))
 	{
 		/* its address changed (a NAT's mapping, or a better path) */
 		peer->endpoint.address = address;
@@ -1062,6 +1074,20 @@ static void update_peers(void)
 
 		if (!peer->used)
 			continue;
+		/* Probe UDP even after a relay connection, and probe the relay when
+					direct traffic stalls. Zero address/port denotes the relay transport. */
+		if (elapsed(peer->probe_time, 2000))
+		{
+			struct p2p_candidate relay = { 0, 0 };
+			int candidate;
+			if (!peer->connected || !peer->endpoint.address)
+				for (candidate = 0; candidate < peer->candidate_count; candidate++)
+					peer_ping(peer, &peer->candidates[candidate]);
+			if (elapsed(peer->offered_time, 3000) &&
+							(!peer->connected || !peer->endpoint.address || elapsed(peer->endpoint_heard_time, ENDPOINT_SWITCH_TIME)))
+				peer_ping(peer, &relay);
+			peer->probe_time = p2p_now();
+		}
 		if (peer->connected)
 		{
 			if (elapsed(peer->heard_time, PEER_TIMEOUT))
@@ -2146,7 +2172,7 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 	its number, can be STUN's magic cookie) */
 	if (size < 1 || packet[0] != TUNNEL_MAGIC)
 	{
-		if (size >= 20 && packet[4] == 0x21 && packet[5] == 0x12 && packet[6] == 0xA4 && packet[7] == 0x42)
+		if (from && size >= 20 && packet[4] == 0x21 && packet[5] == 0x12 && packet[6] == 0xA4 && packet[7] == 0x42)
 			stun_received(packet, size, from);
 		return;
 	}
@@ -2167,7 +2193,7 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 		return;
 	newest = counter > peer->receive_highest;
 	packet_received(peer, counter);
-	peer_heard(peer, from->sin_addr.s_addr, from->sin_port, newest);
+	peer_heard(peer, from ? from->sin_addr.s_addr : 0, from ? from->sin_port : 0, newest);
 	switch (inner[0])
 	{
 	case _packet_ping:
@@ -2176,8 +2202,8 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 			struct p2p_candidate to;
 
 			inner[0] = _packet_pong;
-			to.address = from->sin_addr.s_addr;
-			to.port = from->sin_port;
+			to.address = from ? from->sin_addr.s_addr : 0;
+			to.port = from ? from->sin_port : 0;
 			peer_send_to(peer, &to, inner, 5);
 		}
 		break;
@@ -2201,6 +2227,17 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 		drop_peer(peer, "left");
 		break;
 	}
+}
+
+int p2p_relay_received(const unsigned char *peer_identifier, const unsigned char *packet, int size)
+{
+	struct peer *peer = find_peer(peer_identifier);
+	unsigned long long before;
+	if (!peer || size < TUNNEL_HEADER_SIZE + P2P_TAG_SIZE + 1 ||
+					memcmp(packet + 1, peer_identifier, P2P_IDENTIFIER_SIZE)) return 0;
+	before = peer->receive_highest;
+	tunnel_received(packet, size, NULL);
+	return peer->used && peer->receive_highest > before;
 }
 
 static void tunnel_readable(void)
@@ -2283,10 +2320,18 @@ static int join_invite(const char *text)
 		platform_log("Internet play: that invite is from an older version of the game, which this one "
 			"cannot join");
 	if (parsed <= 0)
+	{
+		p2p.join_error = -3;
 		return parsed;
+	}
 	p2p_identifier_from_hash(hash, host);
 	if (!memcmp(host, identifier, P2P_IDENTIFIER_SIZE))
-		return 1;
+	{
+		p2p.join_error = -4;
+		platform_log("Internet play: this is your own invite; send it to the other player");
+		return 0;
+	}
+	p2p.join_error = 0;
 	peer = find_peer(host);
 	if (peer && peer->connected)
 	{
@@ -2309,11 +2354,27 @@ int p2p_join_invite(const char *text)
 
 	p2p_identifier();
 	pthread_mutex_lock(&p2p_lock);
-	result = join_invite(text);
+	result = p2p.running ? join_invite(text) : 0;
 	pthread_mutex_unlock(&p2p_lock);
-	if (result > 0 && !p2p.running)
+	if (!p2p.running)
 		platform_log("Internet play is off (network.online in config.toml): the invite is ignored");
 	return result > 0;
+}
+
+int p2p_join_status(void)
+{
+	int status;
+	struct peer *peer;
+	pthread_mutex_lock(&p2p_lock);
+	peer = find_peer(p2p.join_host);
+	if (!p2p.running) status = -1;
+	else if (p2p.join_error) status = p2p.join_error;
+	else if (peer && peer->connected) status = peer->endpoint.address ? 5 : 4;
+	else if (peer) status = 3;
+	else if (p2p.join_requested || p2p.joining) status = p2p_signal_connected() ? 2 : 1;
+	else status = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	return status;
 }
 
 void p2p_invite_received(const char *text)
@@ -2344,6 +2405,7 @@ static void update_joining(void)
 	else if (p2p.joining && elapsed(p2p.join_time, JOIN_TIMEOUT))
 	{
 		p2p.joining = 0;
+		p2p.join_error = -2;
 		p2p_signal_stop_joining();
 		platform_log("Internet play: no answer from the invite's host; it may have stopped hosting or quit");
 	}

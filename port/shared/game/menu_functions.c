@@ -1733,6 +1733,7 @@ boolean playlist_profile_get_display_name(long index, wchar_t *name);
 boolean input_get_key(struct key_stroke *key);
 /* the platform layer's */
 int p2p_join_invite(char const *text);
+int p2p_join_status(void);
 int p2p_invite_link(char *link, int size);
 void p2p_set_hosting_allowed(int allowed);
 int p2p_peer_address(unsigned char const *identifier, unsigned long *address);
@@ -2236,7 +2237,7 @@ static void browser_games_read(void)
 	short pass, index;
 
 	multiplayer.game_count = 0;
-	if (!games || multiplayer.mode == _multiplayer_mode_server_browser)
+	if (!games)
 		return;
 	/* (the open games, then those under way) */
 	for (pass = 0; pass < 2; pass++)
@@ -2246,7 +2247,8 @@ static void browser_games_read(void)
 			struct advertised_game *game = &games[index];
 
 			if (network_game_client_advertised_game_is_valid(game) && !advertised_in_progress(game) == (pass == 0) &&
-				game_from_peer(game) == (multiplayer.mode == _multiplayer_mode_direct_link))
+				(multiplayer.mode == _multiplayer_mode_server_browser ||
+					game_from_peer(game) == (multiplayer.mode == _multiplayer_mode_direct_link)))
 			{
 				multiplayer.games[multiplayer.game_count++] = game;
 			}
@@ -2328,7 +2330,7 @@ static boolean browser_initialize(struct widget_instance *screen, struct event_r
 		visible_set(named(screen, titles[index], 0), !strcmp(titles[index], title));
 	for (index = 0; index < NUMBEROF(unused); index++)
 		visible_set(named(screen, unused[index], 0), FALSE);
-	visible_set(named(screen, "button_clipboard", 0), multiplayer.mode == _multiplayer_mode_direct_link);
+	visible_set(named(screen, "button_clipboard", 0), multiplayer.mode != _multiplayer_mode_lan);
 	{
 		struct widget_instance *list = named(screen, "join_game_items_list", 0);
 		struct widget_instance *child;
@@ -2346,8 +2348,6 @@ static boolean browser_initialize(struct widget_instance *screen, struct event_r
 	for (index = 0; named(screen, "header_sort_arrows", index); index++)
 		visible_set(named(screen, "header_sort_arrows", index), FALSE);
 	multiplayer.game_chosen = 0;
-	if (multiplayer.mode == _multiplayer_mode_server_browser)
-		return TRUE;
 	return ui_widget_port_browse(screen, event, widget_deleted);
 }
 
@@ -2410,13 +2410,28 @@ static void browser_update(struct widget_instance *list)
 	{
 		wchar_t text[ROW_TEXT_LENGTH * 2];
 
-		if (multiplayer.mode == _multiplayer_mode_server_browser)
-			text[0] = 0;
-		else if (!multiplayer.game_count)
+		if (!multiplayer.game_count)
 		{
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode == _multiplayer_mode_direct_link ?
-				L"Copy an invite link and PASTE LINK, or accept a Discord invite" :
+			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode != _multiplayer_mode_lan ?
+				L"Host an Internet game, then share its link. Join with PASTE LINK (no public directory)." :
 				L"Looking for games on your LAN...");
+			if (multiplayer.mode != _multiplayer_mode_lan)
+			{
+				wchar_t const *status = NULL;
+				switch (p2p_join_status())
+				{
+				case -1: status = L"Internet play is disabled (network.online)."; break;
+				case -2: status = L"Host did not answer. Check it is hosting an Internet game, then paste its current link."; break;
+				case -3: status = L"Invalid or outdated invite. Copy a fresh link from the host."; break;
+				case -4: status = L"This is your own invite. Send it to the other player."; break;
+				case 1: status = L"Connecting to invite brokers..."; break;
+				case 2: status = L"Contacting the invite's host..."; break;
+				case 3: status = L"Connecting to host: trying direct UDP and encrypted relay..."; break;
+				case 4: status = L"Connected through relay. Looking for the host's game..."; break;
+				case 5: status = L"Connected directly. Looking for the host's game..."; break;
+				}
+				if (status) usnprintf(text, NUMBEROF(text) - 1, L"%s", status);
+			}
 		}
 		else
 		{
@@ -2455,7 +2470,7 @@ static void browser_update(struct widget_instance *list)
 link on the clipboard reached, its game then in the list */
 static boolean direct_link_from_clipboard(void)
 {
-	char text[TEXT_FIELD_LENGTH];
+	char text[1024];
 	char *link = text;
 	size_t length;
 

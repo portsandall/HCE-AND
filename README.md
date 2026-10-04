@@ -186,6 +186,38 @@ APK and notices at the ZIP root. Create these ZIPs without compression
 (stored entries) for compatibility with older updaters; mark the release
 as latest. Downloaded Actions artifact ZIPs should be repackaged this way.
 
+## Online multiplayer
+
+Both players must use compatible builds. The host selects **Create Internet
+Game**, finishes creating the lobby and shares its current `halo://join/` link.
+The other player opens **Direct Link** or **Server Browser** and selects
+**PASTE LINK**. Keep the host game open while the guest connects. The connection
+status appears below the list; select the host's row once it is discovered.
+Your own invitation is for the other player and cannot be used to join yourself.
+
+Server Browser searches LAN games and games reached through invitations. There
+is no global public server directory; an empty list without an invitation does
+not mean an invite connection has failed.
+
+Direct UDP remains the preferred transport. After a few seconds of failed
+hole punching, `network.relay_fallback = true` (default) sends the already
+ChaCha20-Poly1305 authenticated game packets through MQTT brokers, allowing
+mobile/strict NAT connections without forwarding a port. Session topics use
+separate keys for each direction, replay protection remains active, messages
+are never retained and queues are bounded. The client keeps probing UDP and
+switches to it when available. Set `network.relay_fallback = false` for UDP only.
+
+The default `network.signalling_brokers` are anonymous public testing services,
+without a game-service availability or latency guarantee. Sustained play should
+use your own reachable MQTT 3.1.1 broker (`host:port`, anonymous TCP supported
+by this client), configured identically on both devices. Networks must allow
+its TCP port (default 1883). The fallback adds TCP latency and does not create
+a public server listing.
+
+Regression checks: `python tools/test_multiplayer.py` runs actual C tunnel,
+cryptography, relay topic/queue/reconnection and browser-filter code in wasm.
+A real two-device mobile-network gameplay check remains necessary.
+
 ## Known limitations
 
 - Bink videos are skipped.
