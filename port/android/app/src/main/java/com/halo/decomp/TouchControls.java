@@ -54,7 +54,8 @@ public final class TouchControls extends View implements SensorEventListener {
         new Button("Left", 25, 13, -1),
         new Button("Right", 25, 14, -1),
         new Button("", 64, -1, -1), // movement stick keeps its saved index
-        new Button("Fire", 39, -1, 5)
+        new Button("Fire", 39, -1, 5),
+        new Button("Camera mode", 29, -1, -1)
     };
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final SparseIntArray owners = new SparseIntArray();
@@ -97,6 +98,7 @@ public final class TouchControls extends View implements SensorEventListener {
     private float logicalWidth = 960, logicalHeight = 540;
     private static native void nativeLook(float dx, float dy);
     private static native void nativeLookReset();
+    private static native void nativeCameraMode();
     private static native boolean nativeCheatRequest(int id, boolean enabled);
     private static native int nativeCheatStatus(int id);
     private static native void nativeFieldOfView(float degrees);
@@ -271,6 +273,7 @@ public final class TouchControls extends View implements SensorEventListener {
             } else if (control == TOGGLE) {
                 reset(); visible = !visible; performClick();
             } else if (control != Integer.MIN_VALUE) {
+                if (!menusActive && control >= 0 && layout.type(control) == TouchLayout.CAMERA) nativeCameraMode();
                 owners.put(id, control);
                 if (control >= 0 && layout.type(control) == LEFT) moveStick(control, x, y);
                 else buttonTouches.put(id, new float[]{event.getX(index), event.getY(index)});
@@ -471,7 +474,7 @@ public final class TouchControls extends View implements SensorEventListener {
         else if (action == 20) { layout.setShown(selectedControl, !layout.shown(selectedControl)); saveLayout(); }
         else if (action == 21) {
             if (layout.duplicate(selectedControl) < 0)
-                Toast.makeText(getContext(), "Maximum 64 controls.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), "Maximum "+TouchLayout.MAX_CONTROLS+" controls.", Toast.LENGTH_SHORT).show();
             else saveLayout();
         } else if (action == 22) { layout.resetDefaults(); saveLayout(); menuPage = 7; }
         else if (action == 30) { layout.rumbleEnabled = !layout.rumbleEnabled; cancelRumble(); saveLayout(); }
@@ -634,9 +637,11 @@ public final class TouchControls extends View implements SensorEventListener {
     }
 
     private void stick(Canvas canvas, int axis, float x, float y, String label) {
-        circle(canvas, x, y, layout.radius(LEFT), label, false, 11*layout.sizeScale(LEFT));
+        circle(canvas, x, y, layout.radius(LEFT), "", false, 11*layout.sizeScale(LEFT));
         circle(canvas, x + axes[axis]/32767f*layout.radius(LEFT), y + axes[axis+1]/32767f*layout.radius(LEFT),
                24*layout.sizeScale(LEFT), "", held(LEFT));
+        TouchIcons.draw(canvas, paint, LEFT, x + axes[axis]/32767f*layout.radius(LEFT),
+            y + axes[axis+1]/32767f*layout.radius(LEFT), 18*layout.sizeScale(LEFT), held(LEFT));
     }
 
     private boolean overlayVisible() {
@@ -651,13 +656,18 @@ public final class TouchControls extends View implements SensorEventListener {
             canvas.drawText("FPS: "+currentFps, insetLeft+12*scale, insetTop+24*scale, paint);
         }
         canvas.save(); canvas.translate(offsetX, offsetY); canvas.scale(scale, scale);
-        if (!editing) circle(canvas, logicalWidth/2, toolbarY(), 28, (menusActive ? menuOverlayVisible : visible) ? "Hide" : "Touch", false);
+        if (!editing) {
+            circle(canvas, logicalWidth/2, toolbarY(), 28, "", false);
+            TouchIcons.draw(canvas, paint, 19, logicalWidth/2, toolbarY(), 20, menusActive ? menuOverlayVisible : visible);
+        }
         if (overlayVisible()) {
             if (layout.shown(LEFT)) stick(canvas, 0, layout.x(LEFT), layout.y(LEFT), "Move");
             for (int i = 0; i < layout.size(); i++) {
                 if (!layout.shown(i) || layout.type(i) == LEFT) continue;
                 Button b = buttons[layout.type(i)];
-                circle(canvas, layout.x(i), layout.y(i), layout.radius(i), b.label, held(i) || dragControl == i, 11*layout.sizeScale(i));
+                boolean active = held(i) || dragControl == i;
+                circle(canvas, layout.x(i), layout.y(i), layout.radius(i), "", active, 11*layout.sizeScale(i));
+                TouchIcons.draw(canvas, paint, layout.type(i), layout.x(i), layout.y(i), layout.radius(i)*0.72f, active);
             }
         }
         editorButton(canvas);

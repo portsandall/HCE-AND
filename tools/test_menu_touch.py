@@ -23,6 +23,9 @@ code = r'''
 import java.util.*;
 public class MenuTouchTest {
  static final int LEFT=16,LOOK=-5,TOGGLE=-3,EDIT=-4,EXPORT=-6,IMPORT=-7;
+ static class TouchLayout {static final int CAMERA=18;}
+ int cameraTaps;
+ void nativeCameraMode(){cameraTaps++;}
  boolean editing,menusActive=true,visible=true,menuOverlayVisible,menuScrolled;
  int menuPointer=-1,menuGestureRevision,menuGesturePage,menuPage,revision;
  int lookPointer=-1,clicks,pointerClicks,stateBits,dragControl=-1;
@@ -42,14 +45,14 @@ public class MenuTouchTest {
  Map<Integer,float[]> buttonTouches=new HashMap<>();
  static class Layout {
   boolean overlayDisabled;
-  int size(){return 2;} boolean shown(int i){return true;}
-  int type(int i){return i==1?LEFT:0;}
-  float x(int i){return i==1?100:800;} float y(int i){return 400;}
+  int size(){return 3;} boolean shown(int i){return true;}
+  int type(int i){return i==1?LEFT:i==2?18:0;}
+  float x(int i){return i==1?100:i==2?650:800;} float y(int i){return 400;}
   float radius(int i){return 32;}
  }
  Layout layout=new Layout();
  static class Button {int bit,trigger=-1;}
- Button[] buttons=new Button[17];
+ Button[] buttons=new Button[19];
  static class MotionEvent {
   static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3,ACTION_POINTER_DOWN=5,ACTION_POINTER_UP=6;
   int action,id;float x,y;
@@ -100,6 +103,11 @@ code += r'''
   t.tap(480,38);check(t.pointerClicks==1 && !t.overlayVisible(),"Disabled Hide/Touch area must route to the native menu");
   t.stateBits=9;t.publish();check(t.stateBits==0,"Disabled overlay must release gameplay input");
   t.menusActive=false;t.tap(800,400);check(t.stateBits==0 && t.lookPointer==-1,"Disabled controls cannot press buttons or aim");
+  t.menusActive=false;t.visible=true;t.layout.overlayDisabled=false;t.reset();
+  t.event(0,650,400);check(t.cameraTaps==1,"Camera mode must activate on one touch");
+  t.event(2,651,400);check(t.cameraTaps==1,"Holding camera must not repeat");
+  t.event(1,651,400);t.tap(650,400);check(t.cameraTaps==2,"Next tap must switch again");
+  t.menusActive=true;t.menuOverlayVisible=true;t.tap(650,400);check(t.cameraTaps==2,"Menus must suppress camera commands");
   System.out.println("Menu touch toggle, direct taps, overlay buttons, scrolling, slider drag and cancellation passed");
  }
 }

@@ -3332,7 +3332,11 @@ static void event_handler_dispatch(
 		{
 			close_all = TRUE;
 		}
+		/* port: not from a widget its function deleted (it went back:
+		menu_functions.c's profile_save_changes), which the Xbox's opened
+		from regardless */
 		if (TEST_FLAG(handler->flags, _event_handler_open_widget_bit) &&
+			!widget_deleted &&
 			handler->widget_tag.index != NONE)
 		{
 			if (!ui_widget_launch_widget(widget, handler->widget_tag.index))
@@ -5846,6 +5850,23 @@ static boolean ui_mouse_selection_row(
 		(!strncmp(widget->name, "list_item_", 10) || !strncmp(widget->name, "server_item_", 12));
 }
 
+/* port: a press the menus post from their updates (menu_functions.c: the
+server browser's join, once its game is reached), posted where the mouse's
+are: one posted while the widgets update or draw would be overwritten by the
+next frame's events (queue_event keeps the latest) */
+static short ui_widget_port_press_controller = NONE;
+static short ui_widget_port_press_button;
+
+void ui_widget_port_post_button(
+	short controller_index,
+	short button_index)
+{
+	ui_widget_port_press_controller = controller_index;
+	ui_widget_port_press_button = button_index;
+
+	return;
+}
+
 static void ui_widgets_process_mouse(
 	void)
 {
@@ -6054,6 +6075,10 @@ static void widget_instance_render_recursive(
         ui_mouse_widget_is_item(widget)) return;
 #endif
 	ui_mouse_note_target(widget, definition, offset);
+#ifdef HALO_ANDROID
+    /* Keep the original list position/focus target, replace its Quit artwork. */
+    if (ui_porting_is_quit(widget)) return;
+#endif
 	bitmap = bitmap_group_get_bitmap_from_sequence(
 		definition->background_bitmap.index,
 		0,
@@ -6650,6 +6675,27 @@ static void widget_instance_process_one_event_recursive(
 	boolean event_handled = FALSE;
 	boolean widget_deleted = FALSE;
 #ifdef HALO_ANDROID
+    if (ui_porting_context == 1 && event->type == _event_type_button &&
+        event->data.button.value == 1) {
+        if (ui_porting_is_quit(widget) &&
+            (event->data.button.index == _gamepad_analog_button_a ||
+             event->data.button.index == _gamepad_binary_button_start)) {
+            host_porting_action(ui_porting_menu.revision, 1, 0);
+            *return_widget_deleted = FALSE;
+            return;
+        }
+        /* Android Back at the root must not open the obsolete Quit dialog. */
+        if (!widget->parent &&
+            (event->data.button.index == _widget_event_b_button ||
+             event->data.button.index == _widget_event_back_button)) {
+            char const *name = tag_get_name(widget->definition_tag_index);
+            if (name && (!strcmp(name, "pc\\main_menu\\main_menu") ||
+                !strcmp(name, "ui\\shell\\main_menu\\main_menu"))) {
+                *return_widget_deleted = FALSE;
+                return;
+            }
+        }
+    }
     if (!widget->parent && ui_porting_context && ui_porting_menu.page) {
         *return_widget_deleted = FALSE;
         if (event->type == _event_type_button && event->data.button.value == 1 &&
@@ -7364,6 +7410,11 @@ void process_ui_widgets(
 		widget_globals.initialized);
 	widget_globals.current_system_milliseconds = system_milliseconds();
 	ui_widgets_process_mouse();
+	if (ui_widget_port_press_controller != NONE)
+	{
+		event_manager_post_button(ui_widget_port_press_controller, ui_widget_port_press_button);
+		ui_widget_port_press_controller = NONE;
+	}
 	if (widget_globals.initialization_thread)
 	{
 		if (!thread_has_exited(widget_globals.initialization_thread))

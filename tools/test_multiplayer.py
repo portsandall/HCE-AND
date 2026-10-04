@@ -23,6 +23,7 @@ int memcmp(const void*a,const void*b,size_t n){const unsigned char*x=a,*y=b;whil
 void *memmove(void*d,const void*s,size_t n){unsigned char*a=d;const unsigned char*b=s;if(a<b)return memcpy(d,s,n);while(n){n--;a[n]=b[n];}return d;}
 size_t strlen(const char*s){size_t n=0;while(s[n])n++;return n;}
 int strcmp(const char*a,const char*b){while(*a&&*a==*b){a++;b++;}return (unsigned char)*a-(unsigned char)*b;}
+int strncmp(const char*a,const char*b,size_t n){while(n&&*a&&*a==*b){a++;b++;n--;}return n?(unsigned char)*a-(unsigned char)*b:0;}
 char *strcpy(char*d,const char*s){char*r=d;while((*d++=*s++)){}return r;}
 void posix_random_bytes(void*d,int n){memset(d,7,n);}
 void platform_log(const char*f,...){ }
@@ -33,6 +34,9 @@ enum{P2P_IDENTIFIER_SIZE=6,P2P_SHA256_SIZE=32,P2P_NONCE_SIZE=12,P2P_TAG_SIZE=16,
 '''
 lib+="\nint p2p_equal(const void*,const void*,int);\n"
 crypto=re.sub(r'^#include.*\n','',(root/'port/shared/src/p2p_crypto.c').read_text(),flags=re.M)
+# These relay tests exercise SHA/HMAC and the sealed tunnel. Public listing
+# signatures are covered separately by upstream's p2p_lobby_check.
+crypto=crypto[:crypto.index('void p2p_sha512(')]
 transport=r'''
 enum{TUNNEL_MAGIC=0x69,TUNNEL_HEADER_SIZE=15,MAXIMUM_INNER_SIZE=1400,MAXIMUM_PACKET_SIZE=1431,REPLAY_WINDOW=64,MAXIMUM_PEER_PROXIES=4,ENDPOINT_SWITCH_TIME=3000,PING_INTERVAL=1000,PUNCH_INTERVAL=200,PEER_TIMEOUT=20000,PUNCH_TIMEOUT=30000,_packet_ping=1,_packet_pong,_packet_datagram,_packet_stream,_packet_bye};
 struct p2p_candidate{unsigned long address;unsigned short port;};
@@ -87,9 +91,11 @@ def run(name,code):
  subprocess.run([shutil.which('node'),str(out/(name+'.cjs'))],check=True)
 run('encrypted-tunnel-fallback',transport)
 relay=r'''
-enum { TOPIC_SIZE=40, BUFFER_SIZE=4096,OUTPUT_BUFFER_SIZE=65536,MAXIMUM_MESSAGE_SIZE=256,_broker_idle=0,_broker_ready=3,WSAEWOULDBLOCK=10035,WSAEINPROGRESS=10036,_message_join=1,_message_accept=2,MESSAGE_VERSION=3};
+enum { TOPIC_SIZE=64, BUFFER_SIZE=4096,OUTPUT_BUFFER_SIZE=65536,MAXIMUM_MESSAGE_SIZE=512,NUMBER_OF_TOPICS=5,MAXIMUM_LISTING_SIZE=256,MAXIMUM_IN_FLIGHT=4,PUBLISH_BURST=8,PUBLISH_INTERVAL=125,_topic_host=0,_topic_join,_topic_own_slot,_topic_query,_topic_slots,_broker_idle=0,_broker_ready=3,WSAEWOULDBLOCK=10035,WSAEINPROGRESS=10036,_message_join=1,_message_accept=2,MESSAGE_VERSION=3};
+#define P2P_LOBBY_SLOT_PREFIX "hceu/3/lobby/s/"
+#define P2P_LOBBY_QUERY_TOPIC "hceu/3/lobby/q"
 '''+block(s,'struct broker\n')+';\n'+block(s,'struct relay_session\n')+r''';
-static struct{struct relay_session relays[127];struct broker brokers[4];int broker_count,hosting,joining;char host_topic[40],join_topic[40];unsigned char host_key[32],join_key[32];}signalling;
+static struct{struct relay_session relays[127];struct broker brokers[4];int broker_count,hosting,joining,lobby_listed,lobby_browsing;char own_slot[64],host_topic[64],join_topic[64];unsigned char host_key[32],join_key[32];}signalling;
 static int enabled=1,accept_packet=1,received;
 int config_boolean(const char*key){return enabled;}
 void p2p_hex(const unsigned char*b,int n,char*t){const char*h="0123456789abcdef";for(int i=0;i<n;i++){t[2*i]=h[b[i]>>4];t[2*i+1]=h[b[i]&15];}t[2*n]=0;}
@@ -99,12 +105,14 @@ void posix_socket_close(int fd){}
 int p2p_relay_received(const unsigned char*id,const unsigned char*d,int n){received++;return accept_packet;}
 void join_received(struct broker*b,const unsigned char*d,int n){}
 void accept_received(const unsigned char*d,int n){}
+void p2p_lobby_slot_heard(const char*t,const unsigned char*d,int n,int retained){}
+void p2p_lobby_query_heard(void){}
 '''
-for name in ['broker_close','broker_flush','broker_send','put_string','broker_topic','broker_publish','broker_sync_topics','publish_received','relay_topic','p2p_signal_relay_add','p2p_signal_relay_remove','p2p_signal_relay_send']:
+for name in ['broker_close','broker_flush','put_variable','broker_send','put_string','next_packet_identifier','broker_topic','broker_publish','broker_carries_lobby','broker_sync_topics','publish_received','relay_topic','p2p_signal_relay_add','p2p_signal_relay_remove','p2p_signal_relay_send']:
  relay+='\n'+function(s,name)
 relay+=r'''
 int run_tests(void){
- unsigned char id[6]={1,2,3,4,5,6},tx[32],rx[32],packet[2048];char remote_topic[40];int before;
+ unsigned char id[6]={1,2,3,4,5,6},tx[32],rx[32],packet[2048];char remote_topic[64];int before;
  memset(tx,1,32);memset(rx,2,32);signalling.broker_count=2;
  for(int b=0;b<2;b++){signalling.brokers[b].socket=b+1;signalling.brokers[b].state=_broker_ready;}
  p2p_signal_relay_add(id,tx,rx);if(!signalling.relays[0].used||!signalling.brokers[0].relay_subscribed[0]||!signalling.brokers[1].relay_subscribed[0])return 1;
@@ -112,11 +120,11 @@ int run_tests(void){
  for(int b=0;b<2;b++)signalling.brokers[b].output_size=0;
  if(!p2p_signal_relay_send(id,packet,1431)||!signalling.brokers[0].output_size||!signalling.brokers[1].output_size)return 3;
  if(signalling.brokers[0].output[0]!=0x30)return 4; /* QoS0, nonretained */
- accept_packet=0;publish_received(&signalling.brokers[1],remote_topic,packet,1431);if(signalling.relays[0].preferred_broker!=-1)return 5;
- accept_packet=1;publish_received(&signalling.brokers[1],remote_topic,packet,1431);if(received!=2||signalling.relays[0].preferred_broker!=1)return 6;
+ accept_packet=0;publish_received(&signalling.brokers[1],remote_topic,packet,1431,0);if(signalling.relays[0].preferred_broker!=-1)return 5;
+ accept_packet=1;publish_received(&signalling.brokers[1],remote_topic,packet,1431,0);if(received!=2||signalling.relays[0].preferred_broker!=1)return 6;
  before=signalling.brokers[0].output_size;p2p_signal_relay_send(id,packet,1431);if(signalling.brokers[0].output_size!=before)return 7;
  p2p_signal_relay_send(id,packet,36);if(signalling.brokers[0].output_size==before)return 8; /* probes all brokers */
- before=received;publish_received(&signalling.brokers[0],"hceu/r/wrong",packet,1431);publish_received(&signalling.brokers[0],remote_topic,packet,2049);if(received!=before)return 9;
+ before=received;publish_received(&signalling.brokers[0],"hceu/r/wrong",packet,1431,0);publish_received(&signalling.brokers[0],remote_topic,packet,2049,0);if(received!=before)return 9;
  signalling.brokers[1].output_size=OUTPUT_BUFFER_SIZE-1024;
  if(p2p_signal_relay_send(id,packet,1431)||signalling.brokers[1].state!=_broker_ready)return 10; /* congestion drops without disconnect */
  if(p2p_signal_relay_send(id,packet,2049)||p2p_signal_relay_send(id,packet,-1))return 11;

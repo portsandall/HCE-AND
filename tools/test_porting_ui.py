@@ -90,6 +90,8 @@ static struct ui_mouse_target ui_mouse_targets[4];
 static int ui_mouse_target_count, last_action, last_value, last_justification;
 struct widget_instance *ui_mouse_menu(void){return &fixture;}
 struct widget_instance *ui_porting_find_style(struct widget_instance *root){return root;}
+struct widget_instance *ui_porting_find_text(struct widget_instance *root){return root;}
+int ui_porting_is_quit(struct widget_instance *widget){return widget->definition_tag_index==99;}
 void host_porting_action(int revision,int action,int value){last_action=action;last_value=value;}
 void ui_play_audio_feedback_sound(int sound){}
 void draw_quad(rectangle2d *bounds,unsigned long color){}
@@ -153,10 +155,20 @@ int run_tests(void){
  rectangle2d clip={0,0,480,640},row={356,192,389,448};
  template.text_label_string_list.index=NONE;template.text_font.index=1;template.justification=0;
  template.text_color.alpha=0;style.parent=&parent;style.alpha_modifier=0;style.visible=0;
- ui_porting_context=1;ui_porting_menu.page=0;glyphs=0;
+ ui_porting_context=1;ui_porting_menu.page=0;glyphs=0;draw_percent=100;
  ui_porting_text(&style,"Porting options",row,&clip,TRUE,FALSE);
  if(glyphs!=15||current_color.alpha!=1||percent!=100||last_justification!=2)return 1;
- if(draw_percent!=125||current_color.red!=0||current_color.green!=128.f/255.f||current_color.blue!=1)return 14;
+ if(draw_percent!=100||current_color.red!=0||current_color.green!=128.f/255.f||current_color.blue!=1)return 14;
+ /* The old Quit row is replaced at exactly its native bounds, without an extra row. */
+ fixture.definition_tag_index=99;fixture.parent=&parent;
+ ui_mouse_target_count=1;ui_mouse_targets[0].kind=_ui_mouse_target_item;
+ ui_mouse_targets[0].widget=&fixture;ui_mouse_targets[0].bounds=row;
+ ui_porting_menu.revision=5;glyphs=0;
+ ui_porting_render(&fixture,&clip);
+ if(ui_porting_count!=1||ui_porting_bounds[0].y0!=356||ui_porting_bounds[0].y1!=389||glyphs!=15)return 16;
+ struct halo_ui_pointer main_tap={0};main_tap.left_clicks=1;main_tap.click_x=320;main_tap.click_y=370;
+ if(!ui_porting_pointer(&main_tap)||last_action!=1)return 17;
+ ui_mouse_target_count=0;fixture.parent=NULL;
  ui_porting_context=2;
  struct widget_instance background={0};struct ui_widget_definition copy,*def=&template;point2d offset={320,240};
  background.parent=&parent;background.definition_tag_index=42;template.bounds.y1=200;

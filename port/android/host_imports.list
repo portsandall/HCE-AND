@@ -34,6 +34,7 @@ host_sdl_show_simple_message_box
 host_sdl_get_gamepads
 host_touch_read
 host_touch_rumble
+host_touch_camera_read
 host_touch_look_read
 host_touch_field_of_view
 host_touch_cheats_read

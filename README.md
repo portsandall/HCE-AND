@@ -49,8 +49,14 @@ Touch inputs are released when you hide the controls or leave the app.
 ### Porting options
 
 The main menu and the game pause menu include **Porting options**, with
-**Overlay settings**, **General** and **Cheats**. The main-menu entry is
-blue and slightly larger; the pause frame extends below its extra entry.
+**Overlay settings**, **General** and **Cheats**. The main-menu entry replaces
+Quit at its original position and size; the pause frame extends below its extra entry.
+
+The overlay uses cyan Halo-style vector icons. **Camera mode** changes camera
+mode with one tap and is editable from both menus. In flying mode, **Zoom**
+toggles player/camera control; swipe and gyro aim rotate the camera while its
+controls are active. Existing version 1–3 layouts migrate to version 4 while
+preserving positions and copies.
 
 **Overlay settings** lets you move, hide, add, duplicate and resize controls,
 adjust swipe look sensitivity, or select **Disable all overlay**. That toggle

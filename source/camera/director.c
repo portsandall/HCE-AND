@@ -850,6 +850,17 @@ static boolean director_update_controls(
 				controls->facing_delta.pitch =
 					(real)gamepad->sticks[_gamepad_stick_right].y *
 						director_globals.dtime * 0.0000196349538f;
+#ifdef HALO_ANDROID
+				/* Consume direct swipe/gyro motion here while flying controls own
+				   facing; the inhibited player must not consume the same delta. */
+				if (local_player_index == 0) {
+					extern int halo_linux_mouse_look(short, real *, real *);
+					real yaw, pitch;
+					halo_linux_mouse_look(0, &yaw, &pitch);
+					controls->facing_delta.yaw += yaw;
+					controls->facing_delta.pitch += pitch;
+				}
+#endif
 				controls->position_delta.i =
 					(real)gamepad->sticks[_gamepad_stick_left].y *
 						director->debug_input_scale * director_globals.dtime * 0.00005f;
@@ -913,6 +924,12 @@ static boolean director_update_controls(
 		}
 	}
 
+#ifdef HALO_ANDROID
+	if (local_player_index == 0) {
+		extern int host_touch_camera_read(void);
+		if (host_touch_camera_read()) switch_camera = TRUE;
+	}
+#endif
 	return switch_camera;
 }
 

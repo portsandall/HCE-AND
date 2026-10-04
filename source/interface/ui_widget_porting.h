@@ -11,6 +11,16 @@ static int ui_porting_scroll, ui_porting_scroll_max, ui_porting_last_page;
 #define UI_PORTING_SCROLL_LEFT 590
 #define UI_PORTING_SCROLL_RIGHT 626
 
+static boolean ui_porting_is_quit(struct widget_instance *widget)
+{
+    char const *name = tag_get_name(widget->definition_tag_index);
+    char const *leaf = name ? strrchr(name, '\\') : NULL;
+    leaf = leaf ? leaf+1 : name;
+    return ui_porting_context == 1 && leaf &&
+        (!strcmp(leaf, "main_menu_item_quit_game") || !strcmp(leaf, "quit_game") ||
+         !strcmp(leaf, "main_menu_quit_game"));
+}
+
 static int ui_porting_get_context(void)
 {
     struct widget_instance *menu = ui_mouse_menu();
@@ -156,7 +166,7 @@ static void ui_porting_text(struct widget_instance *style, char const *text, rec
     wchar_t wide[96];
     point2d offset = {0, 0};
     rectangle2d scaled_clip = *clip;
-    int percent = ui_porting_menu.page ? 160 : 125;
+    int percent = ui_porting_menu.page ? 160 : ui_porting_context == 1 ? 100 : 125;
     ascii_to_wide(text, wide, sizeof(wide));
     definition.bounds = bounds;
     definition.bounds.x1 = bounds.x0 + (bounds.x1-bounds.x0)*100/percent;
@@ -239,9 +249,11 @@ static void ui_porting_render(struct widget_instance *root, rectangle2d *clip)
     if (!style) return;
     if (!ui_porting_menu.page) {
         struct widget_instance *list = NULL;
+        struct ui_mouse_target *replacement = NULL;
         for (i = 0; i < ui_mouse_target_count; ++i) {
             struct ui_mouse_target *target = &ui_mouse_targets[i];
             if (target->kind != _ui_mouse_target_item) continue;
+            if (ui_porting_is_quit(target->widget)) replacement = target;
             if (!list) { list = target->widget->parent; left = target->bounds.x0; right = target->bounds.x1; }
             if (target->widget->parent != list) continue;
             top = MAX(top, target->bounds.y1);
@@ -252,6 +264,12 @@ static void ui_porting_render(struct widget_instance *root, rectangle2d *clip)
         if (ui_porting_context == 1) { left = 192; right = 448; }
         count = 1;
         top += 4;
+        if (replacement) {
+            left = replacement->bounds.x0; right = replacement->bounds.x1;
+            top = replacement->bounds.y0; step = replacement->bounds.y1-top;
+            style = ui_porting_find_text(replacement->widget);
+            if (!style) style = ui_porting_find_style(root);
+        }
     } else {
         count = MAX(0, ui_porting_menu.count-1); /* Back stays below the viewport. */
         ui_porting_background();

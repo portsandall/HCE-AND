@@ -114,11 +114,11 @@ selection and option lists. **Touch/Hide** remains visible in menus and gameplay
 buttons and movement stick for screens that need them. Swipe aiming, phone
 rumble and gyro aim stop while a game menu is open.
 
-### Porting options (3.0)
+### Porting options (3.1)
 
-The main menu adds **Porting options** beneath Campaign, Multiplayer and
-Settings, centered with the other choices and enlarged to 125% with the main
-menu's blue color. The pause
+The main menu replaces **Quit** with **Porting options** in the original
+list position, using the native menu font, size and blue color. Android Back
+at the main screen no longer opens the Quit dialog. The pause
 menu also adds a single **Porting options** entry containing **Overlay
 settings**, **General** and **Cheats**. Its frame, original text and touch
 targets are enlarged by 12%. These screens are rendered by Halo,
@@ -167,7 +167,18 @@ bitmap is selected from the current map and fills the entire widescreen area.
   require an active player; network clients retain the host's existing rules.
   Available spawned objects depend on the current map.
 
-Version 3 `.halolayout` files also preserve gyro sensitivity and the FPS
+All mobile controls now use original cyan vector HUD icons instead of text.
+**Camera mode** switches between first-person, flying and following cameras
+with one tap, following the engine's existing host/client camera rules.
+It can be moved, resized, hidden and duplicated in Overlay settings from
+both main and pause menus. **Gren. type** keeps its original hold behavior.
+In flying mode, **Zoom** toggles player/camera control; swipe and gyro aiming
+rotate the flying camera while its controls are active, and the movement
+stick translates it. Fire/Grenade control vertical camera movement.
+
+Version 4 `.halolayout` files include the Camera mode control. Imports of
+versions 1–3 insert it without losing existing positions or button copies.
+These files also preserve gyro sensitivity and the FPS
 preference, FOV and Disable all overlay. Missing new settings use 70 degrees
 and enabled overlays. Startup cheats are separate from layout exports. Version 1 and 2 layouts remain supported; their gyro sensitivity
 defaults to 1x and FPS to off. Version 1 retains its default button sizes,
@@ -181,7 +192,9 @@ with recording inputs to check Touch/Hide, menu button release, direct taps,
 swipe suppression and slider dragging across setting acknowledgements.
 Visual layout, taps on imported map variants, phone rumble and sensor
 response must also be checked on an Android device.
-`python tools/test_porting_ui.py` executes the actual text-box/porting functions
+`python tools/test_camera_touch.py` executes the actual director input function
+to check tap switching, held-grenade compatibility, Zoom control ownership,
+flying-camera swipe and movement. `python tools/test_porting_ui.py` executes the actual text-box/porting functions
 with a recording renderer to check zero-alpha/faded template visibility,
 enlarged row dispatch and full-screen native bitmap selection. It requires
 the Windows Android NDK and Node; it does not validate GPU presentation.

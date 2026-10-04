@@ -9,6 +9,7 @@
 static pthread_mutex_t touch_lock = PTHREAD_MUTEX_INITIALIZER;
 static int32_t touch_state[7]; /* SDL axes followed by SDL button bits */
 static float look_delta[2];
+static int camera_pending;
 static struct timespec look_time;
 static uint32_t cheat_pending, cheat_busy;
 static int32_t cheat_commands[16], cheat_status[16];
@@ -44,6 +45,7 @@ void host_touch_ui_context(int menus, int context)
 {
     pthread_mutex_lock(&touch_lock);
     if (ui_menus != menus) {
+        camera_pending = 0;
         memset(touch_state, 0, sizeof(touch_state));
         memset(look_delta, 0, sizeof(look_delta));
         memset(ui_point, 0, sizeof(ui_point));
@@ -192,6 +194,23 @@ JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeLookReset(JNIEnv
     pthread_mutex_lock(&touch_lock);
     look_delta[0] = look_delta[1] = 0;
     pthread_mutex_unlock(&touch_lock);
+}
+
+JNIEXPORT void JNICALL Java_com_halo_decomp_TouchControls_nativeCameraMode(JNIEnv *env, jclass cls)
+{
+    (void)env; (void)cls;
+    pthread_mutex_lock(&touch_lock);
+    if (!ui_menus) camera_pending = 1;
+    pthread_mutex_unlock(&touch_lock);
+}
+
+int host_touch_camera_read(void)
+{
+    int pending;
+    pthread_mutex_lock(&touch_lock);
+    pending = camera_pending; camera_pending = 0;
+    pthread_mutex_unlock(&touch_lock);
+    return pending;
 }
 
 void host_touch_look_read(float *delta)

@@ -8,22 +8,23 @@ import java.util.Properties;
 
 /** Display-relative positions, visibility and action types for touch controls. */
 final class TouchLayout {
-    static final int LEFT = 16, FIRE_LEFT = 17;
+    static final int LEFT = 16, FIRE_LEFT = 17, CAMERA = 18;
     private static final float[][] DEFAULTS = {
         {811.36505f,411.75003f}, {877.21124f,366.6001f}, {883.5595f,281.63678f},
         {843.4512f,219.71782f}, {808.50323f,310.98508f}, {777.5762f,219.08284f},
         {893.86035f,484.31088f}, {558.1477f,504.46585f}, {420.64713f,502.42935f},
         {488.61844f,501.0651f}, {570,36}, {390,36}, {247.43086f,320.87274f},
         {234.66917f,405.15228f}, {207.84561f,351.7265f}, {272.89108f,368.7666f},
-        {115.00001f,440}, {112.52527f,287.46466f}
+        {115.00001f,440}, {112.52527f,287.46466f}, {650,36}
     };
     private static final float[] DEFAULT_SIZES = {
-        1.1f,1.2f,1f,1f,1.3f,1f,1f,0.9f,1f,1f,1f,1f,1f,1f,1f,1f,1f,1f
+        1.1f,1.2f,1f,1f,1.3f,1f,1f,0.9f,1f,1f,1f,1f,1f,1f,1f,1f,1f,1f,1f
     };
     private static final float[] RADII = {
-        36,32,34,32,39,35,32,32,27,29,28,28,25,25,25,25,64,39
+        36,32,34,32,39,35,32,32,27,29,28,28,25,25,25,25,64,39,29
     };
-    static final int BASE_COUNT = 18, MAX_CONTROLS = 64;
+    // One extra slot preserves every copy when migrating a full 64-control layout.
+    static final int BASE_COUNT = 19, MAX_CONTROLS = 65;
     private static final class Control {
         final int type;
         float x, y;
@@ -104,7 +105,7 @@ final class TouchLayout {
         if (!validSensitivity(sensitivity) || !validSensitivity(gyroscopeSensitivity)) throw new IllegalArgumentException("Invalid sensitivity");
         Properties values = new Properties();
         values.setProperty("format", "halo-touch-layout");
-        values.setProperty("version", "3");
+        values.setProperty("version", "4");
         values.setProperty("gyroscope-sensitivity", Float.toString(gyroscopeSensitivity));
         values.setProperty("fps-counter", Boolean.toString(fpsCounter));
         values.setProperty("rumble", Boolean.toString(rumbleEnabled));
@@ -146,11 +147,11 @@ final class TouchLayout {
             values.load(new StringReader(text));
             String version = values.getProperty("version");
             if (!"halo-touch-layout".equals(values.getProperty("format")) ||
-                    !("1".equals(version) || "2".equals(version) || "3".equals(version)))
+                    !("1".equals(version) || "2".equals(version) || "3".equals(version) || "4".equals(version)))
                 throw new IllegalArgumentException("Unsupported layout file");
             int count = Integer.parseInt(values.getProperty("count"));
             float sensitivity = Float.parseFloat(values.getProperty("sensitivity"));
-            if (count < BASE_COUNT || count > MAX_CONTROLS || !validSensitivity(sensitivity))
+            if (count < 18 || count > MAX_CONTROLS || !validSensitivity(sensitivity))
                 throw new IllegalArgumentException("Invalid layout settings");
             TouchLayout layout = new TouchLayout();
             layout.controls.clear();
@@ -163,13 +164,15 @@ final class TouchLayout {
             if (!"1".equals(version)) {
                 layout.rumbleEnabled = readBoolean(values, "rumble");
                 layout.gyroscopeEnabled = readBoolean(values, "gyroscope");
-                if ("3".equals(version)) {
+                if ("3".equals(version) || "4".equals(version)) {
                     layout.fpsCounter = readBoolean(values, "fps-counter");
                     layout.gyroscopeSensitivity = Float.parseFloat(values.getProperty("gyroscope-sensitivity"));
                     if (!validSensitivity(layout.gyroscopeSensitivity))
                         throw new IllegalArgumentException("Invalid gyroscope sensitivity");
                 }
             }
+            int base = "4".equals(version) ? BASE_COUNT : 18;
+            if (count < base) throw new IllegalArgumentException("Incomplete base controls");
             for (int i = 0; i < count; i++) {
                 String key = "control."+i+".";
                 int type = Integer.parseInt(values.getProperty(key+"type"));
@@ -177,8 +180,8 @@ final class TouchLayout {
                 float y = Float.parseFloat(values.getProperty(key+"y"));
                 String shown = values.getProperty(key+"visible");
                 float size = !"1".equals(version) ? Float.parseFloat(values.getProperty(key+"size")) : 1f;
-                if (type < 0 || type >= BASE_COUNT || (i < BASE_COUNT && type != i) ||
-                        (i >= BASE_COUNT && type == LEFT) || !Float.isFinite(x) || !Float.isFinite(y) ||
+                if (type < 0 || type >= base || (i < base && type != i) ||
+                        (i >= base && type == LEFT) || !Float.isFinite(x) || !Float.isFinite(y) ||
                         x < 0 || x > 960 || y < 0 || y > 540 ||
                         !("true".equals(shown) || "false".equals(shown)) ||
                         !Float.isFinite(size) || size < MIN_SIZE || size > MAX_SIZE)
@@ -187,6 +190,10 @@ final class TouchLayout {
                 control.shown = Boolean.parseBoolean(shown);
                 control.size = size;
                 layout.controls.add(control);
+            }
+            if (base == 18) {
+                Control camera = new Control(CAMERA, DEFAULTS[CAMERA][0], DEFAULTS[CAMERA][1]);
+                layout.controls.add(CAMERA, camera);
             }
             return new Configuration(layout, sensitivity);
         } catch (IOException | NullPointerException e) {

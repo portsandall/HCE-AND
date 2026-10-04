@@ -52,6 +52,7 @@ def main():
         ("extract-xiso/LICENSE.TXT", "extract-xiso-LICENSE.txt"),
         ("miniupnpc/LICENSE", "miniupnpc-LICENSE.txt"),
         ("stb/LICENSE", "stb-LICENSE.txt"),
+        ("monocypher/LICENCE.md", "monocypher-LICENCE.txt"),
         ("expat/COPYING", "expat-COPYING.txt")
     ]:
         shutil.copy2(ROOT / "port/third_party" / source, dist / destination)
