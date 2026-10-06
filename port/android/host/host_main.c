@@ -11,12 +11,11 @@ memory (host_thread.c), on which everything here after startup runs; the
 SDL thread waits for it.
 
 Storage (see port/android/README.md): the game data (the directory holding
-maps/) is the app's external files directory,
-/sdcard/Android/data/<package>/files, where the launcher activity copies it
-on first run; saves go to its save/ subdirectory. The settings,
-config.toml, live there too (port/shared/src/port_config.c, which the game
-reads); this file reads only debug.sample_seconds from it, for the sampler
-that runs here.
+maps/) is the user-accessible shared directory /storage/emulated/0/YAHCEP.
+The launcher activity creates it on first run; saves go to its save/
+subdirectory. The settings, config.toml, and debug.txt live there too
+(port/shared/src/port_config.c, which the game reads); this file reads only
+debug.sample_seconds from it, for the sampler that runs here.
 */
 
 #include "host.h"
@@ -236,7 +235,7 @@ static uint32_t make_boot(const struct environment *environment)
 static void *game_main(void *unused)
 {
 	struct environment environment = { { 0 }, 0 };
-	const char *external;
+	const char *external = "/storage/emulated/0/YAHCEP";
 	char zone[64];
 	char path[600];
 	size_t image_size = 0;
@@ -244,9 +243,6 @@ static void *game_main(void *unused)
 	uint32_t boot;
 
 	(void)unused;
-	external = SDL_GetAndroidExternalStoragePath();
-	if (!external)
-		host_fatal("Android storage is unavailable: %s", SDL_GetError());
 	snprintf(data_root, sizeof(data_root), "%s", external);
 	snprintf(save_root, sizeof(save_root), "%s/save", external);
 	/* readable by adb (the shell user), for managing saves */
@@ -254,7 +250,7 @@ static void *game_main(void *unused)
 	share_save_tree(save_root);
 	if (!directory_has_maps(data_root))
 	{
-		host_fatal("The Halo game data was not found.\n\nCopy the PAL game data (build 01.01.14.2342), "
+		host_fatal("The Halo game data was not found.\n\nCopy the game data, "
 			"the folder that contains maps, into\n%s\nor import it from the launcher screen.", data_root);
 	}
 
