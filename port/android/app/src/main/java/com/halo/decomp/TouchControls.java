@@ -125,8 +125,9 @@ public final class TouchControls extends View implements SensorEventListener {
         } else vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         preferences = context.getSharedPreferences("touch-layout-v1", Context.MODE_PRIVATE);
         try {
-            java.io.File folder = context.getExternalFilesDir(null);
-            if (folder == null) throw new java.io.IOException("Game storage is unavailable");
+            java.io.File folder = StoragePaths.dataRoot();
+            if (!folder.exists() && !folder.mkdirs())
+                throw new java.io.IOException("Cannot create " + folder);
             startupCheats = new StartupCheats(new java.io.File(folder, "init.txt").toPath());
         } catch (java.io.IOException e) {
             Toast.makeText(context, "Cannot read init.txt: "+e.getMessage(), Toast.LENGTH_LONG).show();
