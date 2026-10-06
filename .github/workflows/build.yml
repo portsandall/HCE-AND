@@ -1,5 +1,7 @@
 name: Android build
 
+# Actions enabled for HCE-AND validation.
+
 on:
   push:
     branches: [main]
