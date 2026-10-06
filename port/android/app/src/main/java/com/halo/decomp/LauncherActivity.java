@@ -27,14 +27,15 @@ import java.nio.channels.FileChannel;
  * Starts the game once its data is in place.
  *
  * The game reads the Xbox game data (the folder holding maps/) from the
- * app's external files directory, /sdcard/Android/data/com.halo.decomp/files.
+ * user-accessible shared folder /storage/emulated/0/YAHCEP.
  * If it is missing, this screen lets the player pick an Xbox disc image of
  * the game (.xiso or .iso, any version) with the system file picker, and
  * copies its maps folder there (XisoExtractor), as the desktop games do; or
- * they can push the maps folder with adb.
+ * the player can copy the maps folder there with any Android file manager.
  */
 public class LauncherActivity extends Activity {
     private static final int PICK_IMAGE = 1;
+    private static final int REQUEST_STORAGE = 2;
 
     private File dataRoot;
     private TextView status;
@@ -45,11 +46,13 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        dataRoot = getExternalFilesDir(null);
-        // created by the app, so that files pushed into it with adb stay
-        // readable (a directory adb creates there belongs to the shell user)
-        if (dataRoot != null)
-            new File(dataRoot, "maps").mkdirs();
+        dataRoot = StoragePaths.dataRoot();
+        if (!StoragePaths.hasSharedStorageAccess(this)) {
+            buildStoragePermissionInterface();
+            return;
+        }
+        dataRoot.mkdirs();
+        new File(dataRoot, "maps").mkdirs();
         passOnHardwareId();
         passOnInvite(getIntent());
         if (haveData()) {
@@ -125,6 +128,38 @@ public class LauncherActivity extends Activity {
             getResources().getDisplayMetrics());
     }
 
+    private void buildStoragePermissionInterface() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(dp(48), dp(24), dp(48), dp(24));
+        layout.setBackgroundColor(Color.rgb(12, 16, 20));
+
+        TextView title = new TextView(this);
+        title.setText("Storage access required");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        title.setGravity(Gravity.CENTER);
+        layout.addView(title);
+
+        TextView message = new TextView(this);
+        message.setText("Halo stores maps, saves, settings and logs in:\n\n"
+            + StoragePaths.dataRoot().getAbsolutePath()
+            + "\n\nGrant file access so the game and any file manager can use this folder.");
+        message.setTextColor(Color.rgb(200, 205, 210));
+        message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        message.setGravity(Gravity.CENTER);
+        message.setPadding(0, dp(16), 0, dp(16));
+        layout.addView(message);
+
+        Button grant = new Button(this);
+        grant.setText("Grant storage access");
+        grant.setOnClickListener(v -> StoragePaths.requestSharedStorageAccess(this, REQUEST_STORAGE));
+        layout.addView(grant, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+        setContentView(layout);
+    }
+
     private void buildInterface() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -141,10 +176,10 @@ public class LauncherActivity extends Activity {
 
         TextView message = new TextView(this);
         message.setText("Choose an Xbox disc image of Halo: Combat Evolved (an .iso or .xiso file, any "
-            + "version) on this device. Its maps folder is copied into the app's storage (about 1.8 GB), "
+            + "version) on this device. Its maps folder is copied into shared storage (about 1.8 GB), "
             + "and you can delete the image afterwards.\n\n"
-            + "You can also copy a maps folder from a computer:\n"
-            + "adb push <folder with maps>/. " + (dataRoot != null ? dataRoot.getAbsolutePath() : "") + "/");
+            + "You can also copy a maps folder directly with any Android file manager into:\n"
+            + (dataRoot != null ? dataRoot.getAbsolutePath() : StoragePaths.dataRoot().getAbsolutePath()) + "/");
         message.setTextColor(Color.rgb(200, 205, 210));
         message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         message.setGravity(Gravity.CENTER);
@@ -185,9 +220,28 @@ public class LauncherActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // data pushed with adb while this screen was open
-        if (pick != null && pick.isEnabled() && haveData())
+        if (!StoragePaths.hasSharedStorageAccess(this))
+            return;
+        if (dataRoot == null)
+            dataRoot = StoragePaths.dataRoot();
+        dataRoot.mkdirs();
+        new File(dataRoot, "maps").mkdirs();
+        if (pick == null) {
+            passOnHardwareId();
+            passOnInvite(getIntent());
+            if (haveData()) startGame();
+            else buildInterface();
+            return;
+        }
+        if (pick.isEnabled() && haveData())
             startGame();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_STORAGE && StoragePaths.hasSharedStorageAccess(this))
+            recreate();
     }
 
     @Override

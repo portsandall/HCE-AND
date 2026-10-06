@@ -46,7 +46,9 @@ The local Gradle cache and Android user files are kept under `build/`.
 
 The game needs the `maps/` folder from an Xbox disc image (`.xiso` or
 `.iso`) of any version of the game. The app extracts `maps/` from the disc
-image. The app keeps the data in `/sdcard/Android/data/com.halo.decomp/files`.
+image. The app keeps all persistent game data in the user-accessible
+`/storage/emulated/0/YAHCEP` folder. On Android 11 and later the launcher asks
+for "All files access"; Android 9/10 use the normal external-storage permission.
 
 To install the data with the app:
 
@@ -58,19 +60,24 @@ To install the data with the app:
    game starts.
 6. You can delete the disc image.
 
-To install the data from a computer:
+To install the data without ADB:
 
-1. Start the app one time. The app makes its folders.
-2. Enter `adb push <folder>/. /sdcard/Android/data/com.halo.decomp/files/`.
+1. Start the app once and grant storage access.
+2. Open any Android file manager.
+3. Create or open `/storage/emulated/0/YAHCEP/`.
+4. Copy the complete `maps/` folder there so that
+   `/storage/emulated/0/YAHCEP/maps/ui.map` exists.
 
-| Item | Location in `/sdcard/Android/data/com.halo.decomp/files` |
+| Item | Location in `/storage/emulated/0/YAHCEP` |
 | --- | --- |
-| Saved games (`z:\` and `u:\`) | `save` |
+| Game maps | `maps/` |
+| Saved games (`z:\` and `u:\`) | `save/` |
 | Log | `debug.txt` |
 | Settings | `config.toml` |
+| Startup commands / cheats | `init.txt` |
 
-To make a copy of the saved games, enter
-`adb pull /sdcard/Android/data/com.halo.decomp/files/save`.
+ADB still works if desired, for example
+`adb push <folder>/. /storage/emulated/0/YAHCEP/`.
 
 The main menu build label shows **FulGer** for all imported disc versions.
 
@@ -204,9 +211,10 @@ the Windows Android NDK and Node; it does not validate GPU presentation.
 The settings are in `config.toml` in the data folder of the app. To change
 them:
 
-1. Enter `adb pull /sdcard/Android/data/com.halo.decomp/files/config.toml`.
-2. Change the file.
-3. Enter `adb push config.toml /sdcard/Android/data/com.halo.decomp/files/`.
+Open `/storage/emulated/0/YAHCEP/config.toml` in a text editor or copy it
+with any Android file manager. ADB is optional:
+`adb pull /storage/emulated/0/YAHCEP/config.toml` and
+`adb push config.toml /storage/emulated/0/YAHCEP/`.
 
 At the first start, the game writes the file with the default values. To
 get the default values again, delete the file.
@@ -263,8 +271,9 @@ To install over the previous version, each build must have the same
 signature. GitHub Actions signs each build with the key in the
 `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets of the
 repository. If you installed a build that has a different signature, remove
-that build before you install a new build. Removing the app deletes its data
-folder: first make a copy of `maps/` and `save/`.
+that build before you install a new build. Removing the app does not intentionally remove the shared
+`/storage/emulated/0/YAHCEP/` folder, but keeping a backup of `maps/`,
+`save/` and `config.toml` is still recommended.
 
 ## Widescreen
 

@@ -69,9 +69,9 @@ final class Updater {
     }
 
     static File configFile(Activity activity) {
-        File root = activity.getExternalFilesDir(null);
+        File root = StoragePaths.dataRoot();
 
-        return root != null ? new File(root, "config.toml") : null;
+        return new File(root, "config.toml");
     }
 
     /* ---------- config.toml's update.auto */

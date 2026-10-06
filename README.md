@@ -19,8 +19,10 @@ third-party license notices. Install the APK on your device.
 On the first launch, select an Xbox Halo: Combat Evolved disc image
 (`.iso` or `.xiso`) that you own. The app extracts its `maps/` directory
 (approximately 1.8 GB), then starts the game. Copy the image to your device
-before opening the file picker. Saved games, maps, logs and `config.toml`
-are under `/sdcard/Android/data/com.halo.decomp/files/`.
+before opening the file picker. Saved games, maps, logs and `config.toml` are under the user-accessible
+`/storage/emulated/0/YAHCEP/` folder. On Android 11 and later, grant the app
+"All files access" when prompted. This lets you copy `maps/`, saves and config
+files with a normal Android file manager instead of ADB.
 
 ## Touch controls
 
@@ -76,7 +78,7 @@ Rumble defaults on; gyro and FPS default off. Sensitivity sliders range from
 
 **Cheats** in the main menu selects **Startup cheats**. All sixteen start off.
 Selections are saved as executable commands in a marked section of
-`init.txt` under `/sdcard/Android/data/com.halo.decomp/files/`; other file
+`init.txt` under `/storage/emulated/0/YAHCEP/`; other file
 contents are preserved. Flags apply when a player spawns at the start of each
 map, and selected instant actions run once per map. Teleport waits for a valid
 camera. These settings also survive app restarts. In the game pause menu,
