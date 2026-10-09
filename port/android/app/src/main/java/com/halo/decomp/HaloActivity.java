@@ -114,11 +114,6 @@ public class HaloActivity extends SDLActivity {
         }
     }
 
-    @Override protected void onDestroy() {
-        finishMovieRequest(false);
-        super.onDestroy();
-    }
-
     @Override protected void onActivityResult(int request, int result, Intent data) {
         if (request == PLAY_MOVIE) {
             finishMovieRequest(result == RESULT_OK);
@@ -199,6 +194,7 @@ public class HaloActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        finishMovieRequest(false);
         if (touchControls != null) touchControls.stopDeviceInput();
         if (multicastLock != null && multicastLock.isHeld())
             multicastLock.release();
