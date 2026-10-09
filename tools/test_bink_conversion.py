@@ -36,7 +36,8 @@ def main():
         call = [sys.executable, str(CONVERTER), str(root / "owned-input"),
                 "--output", str(output)]
         result = run(*call)
-        movie = output / "language" / "credits.mp4"
+        movie = output / "credits.mp4"
+        assert not (output / "language" / "credits.mp4").exists(), "nested output cannot be resolved by HaloActivity"
         assert movie.is_file(), result.stdout
         codecs = run("ffprobe", "-v", "error", "-show_entries",
                      "stream=codec_name", "-of", "csv=p=0", str(movie)).stdout.splitlines()
@@ -48,6 +49,14 @@ def main():
         assert movie.stat().st_mtime_ns == old, "existing output was overwritten"
         run(*call, "--overwrite")
         assert movie.is_file(), "overwrite deleted converted file"
+        # The guest requests a basename, so two extracted directories with
+        # the same movie name must not overwrite each other.
+        duplicate = root / "owned-input" / "other" / "CREDITS.bik"
+        duplicate.parent.mkdir(parents=True)
+        shutil.copyfile(source, duplicate)
+        collision = subprocess.run(call, capture_output=True, text=True)
+        assert collision.returncode != 0, "duplicate basename was accepted"
+        assert "duplicate movie name" in collision.stderr, collision.stderr
     print("Android Bink conversion smoke test passed (synthetic AVI input)")
 
 

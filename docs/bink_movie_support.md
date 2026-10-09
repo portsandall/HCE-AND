@@ -17,9 +17,11 @@ python tools/convert_bink_movies.py /storage/emulated/0/Download/halo-bink --out
 ```
 
 Or run on a PC or in a CI workspace against user-supplied local assets.
-The converter recursively finds `.bik` (case-insensitive), retains relative
-filenames and directories, produces H.264/AAC MP4s with yuv420p, and skips
-existing output. Pass `--overwrite` to replace them, or `--crf 18` for
+The converter recursively finds `.bik` (case-insensitive), flattens the
+movie basenames into `YAHCEP/movies/` using lowercase names (matching the
+Android runtime resolver), produces H.264/AAC MP4s with yuv420p, and skips
+existing output. Duplicate basenames in different source folders are rejected
+rather than silently overwriting a movie. Pass `--overwrite` to replace them, or `--crf 18` for
 higher quality. Conversion is not yet connected to the game's UI or runtime.
 
 Do not check converted videos, game files, extracted disc images, or private

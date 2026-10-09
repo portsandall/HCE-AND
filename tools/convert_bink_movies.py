@@ -30,9 +30,19 @@ def main():
                    if p.is_file() and p.suffix.lower() == ".bik")
     if not files:
         parser.error(f"no .bik files found under {args.source}")
+    # HaloActivity resolves each movie basename under YAHCEP/movies.
+    # Flatten extracted disc subdirectories and normalize case accordingly.
+    # Reject duplicate basenames rather than playing the wrong movie.
+    targets = {}
+    for src in files:
+        name = src.stem.lower() + ".mp4"
+        if name in targets:
+            parser.error(f"duplicate movie name {name}: {targets[name]} and {src}")
+        targets[name] = src
+
     failed = 0
     for src in files:
-        target = (args.output / src.relative_to(args.source)).with_suffix(".mp4")
+        target = args.output / (src.stem.lower() + ".mp4")
         if target.exists() and not args.overwrite:
             print(f"SKIP {target} (already exists)")
             continue
