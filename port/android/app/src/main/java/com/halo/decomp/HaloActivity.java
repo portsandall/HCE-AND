@@ -28,6 +28,7 @@ public class HaloActivity extends SDLActivity {
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
     private java.util.concurrent.CountDownLatch movieWait;
     private volatile boolean movieStarted;
+    private volatile boolean moviePlaybackFailed;
     private android.widget.FrameLayout movieLayer;
     private android.widget.VideoView movieVideo;
     private String pendingLayoutExport;
@@ -104,6 +105,7 @@ public class HaloActivity extends SDLActivity {
             if (movieWait != null) return false;
             movieWait = wait;
             movieStarted = false;
+            moviePlaybackFailed = false;
         }
         runOnUiThread(() -> openMovieOverlay(converted));
         boolean finished = false;
@@ -115,7 +117,7 @@ public class HaloActivity extends SDLActivity {
         }
         // A playable MP4 was shown; completion and user skipping both count
         // as a handled movie. Codec errors fall back to the Bink null path.
-        return finished && movieStarted;
+        return finished && movieStarted && !moviePlaybackFailed;
     }
 
     private void openMovieOverlay(java.io.File file) {
@@ -148,18 +150,26 @@ public class HaloActivity extends SDLActivity {
             video.setOnCompletionListener(mp -> finishMovieRequest());
             video.setOnErrorListener((mp, what, extra) -> {
                 android.util.Log.w("halo", "MP4 playback failed: " + what + "/" + extra);
+                moviePlaybackFailed = true;
                 finishMovieRequest();
                 return true;
             });
             video.setOnPreparedListener(mp -> {
                 if (movieVideo == video && movieLayer != null) {
-                    movieStarted = true;
-                    video.start();
+                    try {
+                        video.start();
+                        movieStarted = true;
+                    } catch (RuntimeException e) {
+                        android.util.Log.e("halo", "MP4 playback could not start", e);
+                        moviePlaybackFailed = true;
+                        finishMovieRequest();
+                    }
                 }
             });
             video.setVideoURI(Uri.fromFile(file));
         } catch (RuntimeException e) {
             android.util.Log.e("halo", "Could not play converted Bink movie", e);
+            moviePlaybackFailed = true;
             finishMovieRequest();
         }
     }
