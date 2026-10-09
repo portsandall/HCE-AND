@@ -55,7 +55,8 @@ def main():
             "-map", "0:v:0", "-map", "0:a:0?",
             "-c:v", "libx264", "-preset", "veryfast",
             "-crf", str(args.crf), "-pix_fmt", "yuv420p",
-            "-vf", "scale='min(1280,iw)':-2:flags=lanczos",
+            # yuv420p/libx264 requires even dimensions, including odd-width inputs.
+            "-vf", "scale='max(2,trunc(min(1280,iw)/2)*2)':-2:flags=lanczos",
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart", str(temp),
         ]
