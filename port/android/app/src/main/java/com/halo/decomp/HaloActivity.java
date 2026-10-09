@@ -25,7 +25,9 @@ public class HaloActivity extends SDLActivity {
     /** lets system link's broadcasts in over Wi-Fi while the game runs */
     private WifiManager.MulticastLock multicastLock;
     private TouchControls touchControls;
-    private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
+    private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402, PLAY_MOVIE = 403;
+    private java.util.concurrent.CountDownLatch movieWait;
+    private volatile boolean movieCompleted;
     private String pendingLayoutExport;
 
     @Override
@@ -77,7 +79,51 @@ public class HaloActivity extends SDLActivity {
         state.putString("pending-layout-export", pendingLayoutExport);
     }
 
+    /** Called by the guest/host Bink shim on the game thread. Never block the UI thread. */
+    public boolean playMovieBlocking(String requestedPath) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+            return false;
+        final java.io.File converted;
+        try {
+            String p = requestedPath.replace('\\', '/');
+            String name = p.substring(p.lastIndexOf('/') + 1);
+            converted = MovieActivity.resolveMovie(name);
+        } catch (java.io.IOException e) { return false; }
+        final java.util.concurrent.CountDownLatch wait = new java.util.concurrent.CountDownLatch(1);
+        synchronized (this) {
+            if (movieWait != null) return false;
+            movieWait = wait;
+            movieCompleted = false;
+        }
+        runOnUiThread(() -> {
+            try {
+                Intent intent = new Intent(this, MovieActivity.class);
+                intent.putExtra(MovieActivity.EXTRA_MOVIE, converted.getName());
+                startActivityForResult(intent, PLAY_MOVIE);
+            } catch (RuntimeException e) { finishMovieRequest(false); }
+        });
+        try { return wait.await(20, java.util.concurrent.TimeUnit.MINUTES); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+        finally { synchronized (this) { if (movieWait == wait) movieWait = null; } }
+    }
+
+    private void finishMovieRequest(boolean completed) {
+        synchronized (this) {
+            movieCompleted = completed;
+            if (movieWait != null) movieWait.countDown();
+        }
+    }
+
+    @Override protected void onDestroy() {
+        finishMovieRequest(false);
+        super.onDestroy();
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
+        if (request == PLAY_MOVIE) {
+            finishMovieRequest(result == RESULT_OK);
+            return;
+        }
         if (request != EXPORT_LAYOUT && request != IMPORT_LAYOUT) {
             super.onActivityResult(request, result, data); return;
         }
