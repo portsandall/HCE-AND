@@ -30,9 +30,9 @@ public final class MovieActivity extends Activity {
         String name = movie.replace('\\', '/');
         if (name.length() > 240 || name.startsWith("/") || name.indexOf(':') >= 0)
             throw new IOException("Invalid movie path");
-        String lower = name.toLowerCase(java.util.Locale.ROOT);
-        if (lower.endsWith(".bik")) name = name.substring(0, name.length() - 4) + ".mp4";
-        else if (!lower.endsWith(".mp4")) name += ".mp4";
+        name = name.toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".bik")) name = name.substring(0, name.length() - 4) + ".mp4";
+        else if (!name.endsWith(".mp4")) name += ".mp4";
         File root = new File(StoragePaths.dataRoot(), "movies").getCanonicalFile();
         File file = new File(root, name).getCanonicalFile();
         if (!file.toPath().startsWith(root.toPath()) || !file.isFile())
