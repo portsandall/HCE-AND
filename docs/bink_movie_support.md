@@ -1,6 +1,6 @@
 # Bink movie support — HCE-AND
 
-**Status: conversion utility and Android MP4 player implemented; native engine trigger/completion integration not implemented.**
+**Status: experimental Android Bink-to-MP4 playback bridge implemented; build and on-device validation pending.**
 
 The existing Halo Android engine skips its original Xbox Bink (.bik) videos.
 Simply copying MP4 files to the phone does **not** change that behaviour yet.
@@ -60,3 +60,17 @@ MovieActivity resolves converted files safely, uses Android's video playback,
 handles completion/errors/Back, and is registered in the manifest. The native
 guest/host bridge does **not yet launch MovieActivity**, so videos will still
 be skipped in gameplay; the acceptance criteria are **not yet met**.
+
+
+## Experimental integrated branch (October 9, 2026)
+
+The Android build now imports `host_movie_play`, intercepts
+`bink_playback_start`, resolves movie basenames under `YAHCEP/movies`,
+and plays MP4 on Android through a fullscreen activity, then returns control
+to the guest. The original native Bink stub remains the missing-video
+fallback. Existing game assets are never copied into the APK.
+
+**This path is synchronous:** the guest game thread waits while the Android
+activity plays. Device testing is required for SDL lifecycle transitions,
+sound restoration, game UI state, credits behavior and video navigation.
+On-screen video playback and release quality are not yet verified.
