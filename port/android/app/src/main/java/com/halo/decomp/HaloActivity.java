@@ -28,6 +28,7 @@ public class HaloActivity extends SDLActivity {
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
     private volatile java.util.concurrent.CountDownLatch movieWait;
     private volatile boolean movieStarted;
+    private volatile boolean movieSkipped;
     private volatile boolean moviePlaybackFailed;
     private android.widget.FrameLayout movieLayer;
     private android.widget.VideoView movieVideo;
@@ -105,6 +106,7 @@ public class HaloActivity extends SDLActivity {
             if (movieWait != null) return false;
             movieWait = wait;
             movieStarted = false;
+            movieSkipped = false;
             moviePlaybackFailed = false;
         }
         runOnUiThread(() -> openMovieOverlay(converted, wait));
@@ -129,7 +131,7 @@ public class HaloActivity extends SDLActivity {
         }
         // A playable MP4 was shown; completion and user skipping both count
         // as a handled movie. Codec errors fall back to the Bink null path.
-        return finished && movieStarted && !moviePlaybackFailed;
+        return finished && (movieStarted || movieSkipped) && !moviePlaybackFailed;
     }
 
     private void openMovieOverlay(java.io.File file, java.util.concurrent.CountDownLatch request) {
@@ -151,8 +153,10 @@ public class HaloActivity extends SDLActivity {
                     android.view.Gravity.CENTER);
             layer.addView(video, fit);
             android.view.View.OnTouchListener skip = (view, event) -> {
-                if (event.getAction() == android.view.MotionEvent.ACTION_UP)
+                if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    movieSkipped = true;
                     finishMovieRequest();
+                }
                 return true;
             };
             layer.setOnTouchListener(skip);
@@ -261,7 +265,11 @@ public class HaloActivity extends SDLActivity {
     }
 
     @Override public void onBackPressed() {
-        if (movieLayer != null) { finishMovieRequest(); return; }
+        if (movieLayer != null) {
+            movieSkipped = true;
+            finishMovieRequest();
+            return;
+        }
         if (touchControls != null && touchControls.menuBack()) return;
         super.onBackPressed();
     }
