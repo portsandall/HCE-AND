@@ -1,6 +1,6 @@
 # Bink movie support — HCE-AND
 
-**Status: conversion utility implemented; playback integration not implemented.**
+**Status: conversion utility and Android MP4 player implemented; native engine trigger/completion integration not implemented.**
 
 The existing Halo Android engine skips its original Xbox Bink (.bik) videos.
 Simply copying MP4 files to the phone does **not** change that behaviour yet.
@@ -55,5 +55,8 @@ Android decoder approach is simpler for this port.
 - No copyrighted game video is distributed in APKs or GitHub artifacts.
 - Android build and device regression tests pass.
 
-Only the conversion tool is completed in this branch; these criteria are
-**not yet met**.
+The converter and a private Android MovieActivity are implemented. The
+MovieActivity resolves converted files safely, uses Android's video playback,
+handles completion/errors/Back, and is registered in the manifest. The native
+guest/host bridge does **not yet launch MovieActivity**, so videos will still
+be skipped in gameplay; the acceptance criteria are **not yet met**.
