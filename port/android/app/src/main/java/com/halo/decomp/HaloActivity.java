@@ -26,7 +26,7 @@ public class HaloActivity extends SDLActivity {
     private WifiManager.MulticastLock multicastLock;
     private TouchControls touchControls;
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
-    private java.util.concurrent.CountDownLatch movieWait;
+    private volatile java.util.concurrent.CountDownLatch movieWait;
     private volatile boolean movieStarted;
     private volatile boolean moviePlaybackFailed;
     private android.widget.FrameLayout movieLayer;
@@ -112,8 +112,20 @@ public class HaloActivity extends SDLActivity {
         try { finished = wait.await(20, java.util.concurrent.TimeUnit.MINUTES); }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         finally {
-            if (!finished) runOnUiThread(() -> finishMovieRequest());
-            synchronized (this) { if (movieWait == wait) movieWait = null; }
+            if (!finished) {
+                // Keep this request reserved until its queued UI cleanup runs.
+                // Otherwise a timed-out callback can stop a newer movie.
+                runOnUiThread(() -> {
+                    if (movieWait != wait) return;
+                    moviePlaybackFailed = true;
+                    try { finishMovieRequest(); }
+                    finally {
+                        synchronized (this) { if (movieWait == wait) movieWait = null; }
+                    }
+                });
+            } else {
+                synchronized (this) { if (movieWait == wait) movieWait = null; }
+            }
         }
         // A playable MP4 was shown; completion and user skipping both count
         // as a handled movie. Codec errors fall back to the Bink null path.
