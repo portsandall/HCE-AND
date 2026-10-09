@@ -520,7 +520,13 @@ void bink_playback_start(
      * fall back to the original no-Bink behavior. */
     if (host_movie_play(full_pathname)) {
         attract_mode_reset_timer();
-        if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit))
+        /* The first-load intro uses the large Bink memory flag and is
+         * launched from main_screen_shell_load(). That caller loads the
+         * main menu after this synchronous Android bridge returns.
+         * Calling main_menu_load() here as well would reenter/double-load
+         * the menu before filesystem initialization has completed. */
+        if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit) &&
+            !TEST_FLAG(flags, _bink_playback_eat_up_memory_like_a_goddamn_beaver_bit))
             main_menu_load();
         return;
     }
