@@ -107,7 +107,7 @@ public class HaloActivity extends SDLActivity {
             movieStarted = false;
             moviePlaybackFailed = false;
         }
-        runOnUiThread(() -> openMovieOverlay(converted));
+        runOnUiThread(() -> openMovieOverlay(converted, wait));
         boolean finished = false;
         try { finished = wait.await(20, java.util.concurrent.TimeUnit.MINUTES); }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -120,8 +120,11 @@ public class HaloActivity extends SDLActivity {
         return finished && movieStarted && !moviePlaybackFailed;
     }
 
-    private void openMovieOverlay(java.io.File file) {
-        if (movieWait == null || isFinishing() || isDestroyed() || mLayout == null) {
+    private void openMovieOverlay(java.io.File file, java.util.concurrent.CountDownLatch request) {
+        // A lifecycle cancellation can finish before this queued UI task runs.
+        // Never open a stale movie over a later request.
+        if (movieWait != request) return;
+        if (moviePlaybackFailed || isFinishing() || isDestroyed() || mLayout == null) {
             finishMovieRequest();
             return;
         }
@@ -259,7 +262,12 @@ public class HaloActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
-        if (movieLayer != null) finishMovieRequest();
+        // Backgrounding is not successful movie completion or an intentional skip.
+        // Cancel even if the overlay has not yet been created on the UI thread.
+        if (movieWait != null) {
+            moviePlaybackFailed = true;
+            finishMovieRequest();
+        }
         if (touchControls != null) touchControls.stopDeviceInput();
         super.onPause();
     }
@@ -275,6 +283,7 @@ public class HaloActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        if (movieWait != null) moviePlaybackFailed = true;
         finishMovieRequest();
         if (touchControls != null) touchControls.stopDeviceInput();
         if (multicastLock != null && multicastLock.isHeld())
