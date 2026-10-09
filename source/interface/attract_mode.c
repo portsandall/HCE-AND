@@ -189,7 +189,8 @@ const char *attract_mode_get_localized_movie_path(
 			bss_00453ae8[0] = '\0';
 
 			break;
-		}#endif /* !HALO_ANDROID */
+		}
+#endif /* !HALO_ANDROID */
 	}
 
 	return bss_00453ae8;
