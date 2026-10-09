@@ -49,6 +49,24 @@ def main():
         assert movie.stat().st_mtime_ns == old, "existing output was overwritten"
         run(*call, "--overwrite")
         assert movie.is_file(), "overwrite deleted converted file"
+        # Regression: odd-sized source frames must become even-sized H.264
+        # YUV420P frames. Use a localized filename and no audio to exercise
+        # the optional audio mapping without including any game assets.
+        odd_avi = root / "owned-input" / "intro_fr.avi"
+        run("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=blue:s=65x63:r=15",
+            "-frames:v", "3", "-c:v", "mpeg4", str(odd_avi))
+        odd_avi.rename(odd_avi.with_suffix(".BIK"))
+        run(*call)
+        odd_mp4 = output / "intro_fr.mp4"
+        assert odd_mp4.is_file(), "localized odd-sized movie was not converted"
+        dimensions = run("ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=width,height,pix_fmt",
+                         "-of", "csv=p=0", str(odd_mp4)).stdout.strip().split(",")
+        assert len(dimensions) == 3, dimensions
+        width, height = map(int, dimensions[:2])
+        assert width > 0 and height > 0 and width % 2 == height % 2 == 0, dimensions
+        assert dimensions[2] == "yuv420p", dimensions
         # The guest requests a basename, so two extracted directories with
         # the same movie name must not overwrite each other.
         duplicate = root / "owned-input" / "other" / "CREDITS.bik"
