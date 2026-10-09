@@ -35,9 +35,31 @@ public final class MovieActivity extends Activity {
         else if (!name.endsWith(".mp4")) name += ".mp4";
         File root = new File(StoragePaths.dataRoot(), "movies").getCanonicalFile();
         File file = new File(root, name).getCanonicalFile();
-        if (!file.toPath().startsWith(root.toPath()) || !file.isFile())
-            throw new IOException("Movie file unavailable");
-        return file;
+        if (!file.toPath().startsWith(root.toPath()))
+            throw new IOException("Invalid movie path");
+        if (file.isFile()) return file;
+
+        // Halo tries other installed languages when the requested movie is
+        // absent. The converter flattens each movie to a lowercase basename.
+        // Keep exact matches first, then follow the game's language order.
+        String stem = name.substring(0, name.length() - 4);
+        String base = stem;
+        for (String suffix : new String[] {"_de", "_fr", "_es", "_it"}) {
+            if (stem.endsWith(suffix)) {
+                base = stem.substring(0, stem.length() - suffix.length());
+                break;
+            }
+        }
+        if (base.equals("intro") || base.equals("credits")
+                || base.equals("attract1") || base.equals("attract2")
+                || base.equals("attract3")) {
+            for (String suffix : new String[] {"_de", "_fr", "_es", "_it", ""}) {
+                File alternative = new File(root, base + suffix + ".mp4").getCanonicalFile();
+                if (alternative.toPath().startsWith(root.toPath()) && alternative.isFile())
+                    return alternative;
+            }
+        }
+        throw new IOException("Movie file unavailable");
     }
 
     @Override public void onCreate(Bundle state) {
