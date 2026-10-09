@@ -116,6 +116,9 @@ symbols in this file:
 
 #include "cseries.h"
 #include "bink_playback.h"
+#ifdef HALO_ANDROID
+extern int host_movie_play(const char *filename);
+#endif
 #include "bitmaps/bitmap_group.h"
 #include "bitmaps/bitmaps.h"
 #include "cache/cache_files.h"
@@ -511,6 +514,17 @@ void bink_playback_start(
 	const char *full_pathname,
 	unsigned long flags)
 {
+#ifdef HALO_ANDROID
+    /* Converted .bik movie plays in a separate Android activity. The call
+     * returns when playback completes or the user skips it. Missing MP4s
+     * fall back to the original no-Bink behavior. */
+    if (host_movie_play(full_pathname)) {
+        attract_mode_reset_timer();
+        if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit))
+            main_menu_load();
+        return;
+    }
+#endif
 	bink_get_memory_available("begin bink_playback_start");
 
 	if (!bink_globals.initialized)
