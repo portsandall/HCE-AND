@@ -209,9 +209,7 @@ public class HaloActivity extends SDLActivity {
             if (layer.getParent() instanceof ViewGroup)
                 ((ViewGroup) layer.getParent()).removeView(layer);
         }
-        // Do not reactivate game controls while a movie request owns the UI.
-        if (touchControls != null && movieWait == null
-                && getWindow().getDecorView().hasWindowFocus())
+        if (touchControls != null && getWindow().getDecorView().hasWindowFocus())
             touchControls.startDeviceInput();
         synchronized (this) {
             if (movieWait != null) movieWait.countDown();
@@ -278,7 +276,9 @@ public class HaloActivity extends SDLActivity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (touchControls != null && getWindow().getDecorView().hasWindowFocus())
+        // Focus/resume must not restart gameplay input over the movie overlay.
+        if (touchControls != null && movieWait == null
+                && getWindow().getDecorView().hasWindowFocus())
             touchControls.startDeviceInput();
     }
 
