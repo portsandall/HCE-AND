@@ -2,10 +2,9 @@
 
 **Status: experimental Bink-to-MP4 Android playback bridge; debug/release APK builds and synthetic conversion tests pass, but playback on a physical device remains unverified.**
 
-The existing Halo Android engine skips its original Xbox Bink (.bik) videos.
-Simply copying MP4 files to the phone does **not** change that behaviour yet.
-This branch provides a reproducible, offline first step, without bundling game
-assets or introducing proprietary RAD SDK dependencies.
+This branch includes a converter and experimental Android movie playback bridge.
+The host resolves MP4 files in YAHCEP/movies using original movie basenames.
+No game video assets or proprietary Bink SDK dependencies are bundled.
 
 ## Convert your own Xbox game files
 
