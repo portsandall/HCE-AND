@@ -515,9 +515,9 @@ void bink_playback_start(
 	unsigned long flags)
 {
 #ifdef HALO_ANDROID
-    /* Converted .bik movie plays in a separate Android activity. The call
-     * returns when playback completes or the user skips it. Missing MP4s
-     * fall back to the original no-Bink behavior. */
+    /* Converted .bik movies play synchronously through the Android overlay.
+     * The native Bink implementation is a stub, so a missing or failed MP4
+     * must be skipped without initializing the unsupported decoder. */
     if (host_movie_play(full_pathname)) {
         attract_mode_reset_timer();
         /* The first-load intro uses the large Bink memory flag and is
@@ -528,8 +528,8 @@ void bink_playback_start(
         if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit) &&
             !TEST_FLAG(flags, _bink_playback_eat_up_memory_like_a_goddamn_beaver_bit))
             main_menu_load();
-        return;
     }
+    return;
 #endif
 	bink_get_memory_available("begin bink_playback_start");
 
