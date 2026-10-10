@@ -518,17 +518,19 @@ void bink_playback_start(
     /* Converted .bik movies play synchronously through the Android overlay.
      * The native Bink implementation is a stub, so a missing or failed MP4
      * must be skipped without initializing the unsupported decoder. */
-    if (host_movie_play(full_pathname)) {
-        attract_mode_reset_timer();
-        /* The first-load intro uses the large Bink memory flag and is
-         * launched from main_screen_shell_load(). That caller loads the
-         * main menu after this synchronous Android bridge returns.
-         * Calling main_menu_load() here as well would reenter/double-load
-         * the menu before filesystem initialization has completed. */
-        if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit) &&
-            !TEST_FLAG(flags, _bink_playback_eat_up_memory_like_a_goddamn_beaver_bit))
-            main_menu_load();
-    }
+    host_movie_play(full_pathname);
+    /* Completed, skipped and unavailable movies all need to advance the
+     * caller's menu sequence. In particular, credits have no fallback
+     * main_menu_load() when the MP4 is absent. */
+    attract_mode_reset_timer();
+    /* The first-load intro uses the large Bink memory flag and is
+     * launched from main_screen_shell_load(). That caller loads the
+     * main menu after this synchronous Android bridge returns.
+     * Calling main_menu_load() here as well would reenter/double-load
+     * the menu before filesystem initialization has completed. */
+    if (TEST_FLAG(flags, _bink_playback_return_to_main_menu_when_finished_bit) &&
+        !TEST_FLAG(flags, _bink_playback_eat_up_memory_like_a_goddamn_beaver_bit))
+        main_menu_load();
     return;
 #endif
 	bink_get_memory_available("begin bink_playback_start");
