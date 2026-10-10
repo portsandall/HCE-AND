@@ -95,12 +95,16 @@ public class HaloActivity extends SDLActivity {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
                 || requestedPath == null || isFinishing() || isDestroyed())
             return false;
+        String p = requestedPath.replace('\\', '/');
+        String name = p.substring(p.lastIndexOf('/') + 1);
         final java.io.File converted;
         try {
-            String p = requestedPath.replace('\\', '/');
-            String name = p.substring(p.lastIndexOf('/') + 1);
             converted = MovieActivity.resolveMovie(name);
-        } catch (java.io.IOException e) { return false; }
+        } catch (java.io.IOException e) {
+            android.util.Log.i("halo", "Bink movie unavailable: " + name + " (" + e.getMessage() + ")");
+            return false;
+        }
+        android.util.Log.i("halo", "Bink movie resolved: " + converted.getName());
         final java.util.concurrent.CountDownLatch wait = new java.util.concurrent.CountDownLatch(1);
         synchronized (this) {
             if (movieWait != null) return false;
@@ -167,7 +171,15 @@ public class HaloActivity extends SDLActivity {
             mLayout.addView(layer, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             if (touchControls != null) touchControls.stopDeviceInput();
-            video.setOnCompletionListener(mp -> finishMovieRequest());
+            video.setOnCompletionListener(mp -> {
+                android.util.Log.i("halo", "Bink movie completed");
+                finishMovieRequest();
+            });
+            video.setOnInfoListener((mp, what, extra) -> {
+                if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START)
+                    android.util.Log.i("halo", "Bink movie first video frame rendered");
+                return false;
+            });
             video.setOnErrorListener((mp, what, extra) -> {
                 android.util.Log.w("halo", "MP4 playback failed: " + what + "/" + extra);
                 moviePlaybackFailed = true;
@@ -179,6 +191,7 @@ public class HaloActivity extends SDLActivity {
                     try {
                         video.start();
                         movieStarted = true;
+                        android.util.Log.i("halo", "Bink movie playback started");
                     } catch (RuntimeException e) {
                         android.util.Log.e("halo", "MP4 playback could not start", e);
                         moviePlaybackFailed = true;
@@ -202,6 +215,7 @@ public class HaloActivity extends SDLActivity {
             video.setOnCompletionListener(null);
             video.setOnErrorListener(null);
             video.setOnPreparedListener(null);
+            video.setOnInfoListener(null);
             video.stopPlayback();
         }
         if (movieLayer != null) {
