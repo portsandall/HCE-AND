@@ -26,6 +26,12 @@ public class HaloActivity extends SDLActivity {
     private WifiManager.MulticastLock multicastLock;
     private TouchControls touchControls;
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
+    private volatile java.util.concurrent.CountDownLatch movieWait;
+    private volatile boolean movieStarted;
+    private volatile boolean movieSkipped;
+    private volatile boolean moviePlaybackFailed;
+    private android.widget.FrameLayout movieLayer;
+    private android.widget.VideoView movieVideo;
     private String pendingLayoutExport;
 
     @Override
@@ -77,6 +83,154 @@ public class HaloActivity extends SDLActivity {
         state.putString("pending-layout-export", pendingLayoutExport);
     }
 
+    /**
+     * Keep video inside the existing SDL Activity. HaloActivity is
+     * singleInstance, which forces startActivityForResult into another task
+     * and may return RESULT_CANCELED immediately. An in-place overlay also
+     * avoids pausing SDL's surface and losing its GL state.
+     *
+     * This is only called from the guest thread, never from the UI thread.
+     */
+    public boolean playMovieBlocking(String requestedPath) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+                || requestedPath == null || isFinishing() || isDestroyed())
+            return false;
+        String p = requestedPath.replace('\\', '/');
+        String name = p.substring(p.lastIndexOf('/') + 1);
+        final java.io.File converted;
+        try {
+            converted = MovieActivity.resolveMovie(name);
+        } catch (java.io.IOException e) {
+            android.util.Log.i("halo", "Bink movie unavailable: " + name + " (" + e.getMessage() + ")");
+            return false;
+        }
+        android.util.Log.i("halo", "Bink movie resolved: " + converted.getName());
+        final java.util.concurrent.CountDownLatch wait = new java.util.concurrent.CountDownLatch(1);
+        synchronized (this) {
+            if (movieWait != null) return false;
+            movieWait = wait;
+            movieStarted = false;
+            movieSkipped = false;
+            moviePlaybackFailed = false;
+        }
+        runOnUiThread(() -> openMovieOverlay(converted, wait));
+        boolean finished = false;
+        try { finished = wait.await(20, java.util.concurrent.TimeUnit.MINUTES); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        finally {
+            if (!finished) {
+                // Keep this request reserved until its queued UI cleanup runs.
+                // Otherwise a timed-out callback can stop a newer movie.
+                runOnUiThread(() -> {
+                    if (movieWait != wait) return;
+                    moviePlaybackFailed = true;
+                    try { finishMovieRequest(); }
+                    finally {
+                        synchronized (this) { if (movieWait == wait) movieWait = null; }
+                    }
+                });
+            } else {
+                synchronized (this) { if (movieWait == wait) movieWait = null; }
+            }
+        }
+        // A playable MP4 was shown; completion and user skipping both count
+        // as a handled movie. Codec errors fall back to the Bink null path.
+        return finished && (movieStarted || movieSkipped) && !moviePlaybackFailed;
+    }
+
+    private void openMovieOverlay(java.io.File file, java.util.concurrent.CountDownLatch request) {
+        // A lifecycle cancellation can finish before this queued UI task runs.
+        // Never open a stale movie over a later request.
+        if (movieWait != request) return;
+        // Back may skip a pending request before this queued overlay opens.
+        if (movieSkipped || moviePlaybackFailed || isFinishing() || isDestroyed() || mLayout == null) {
+            finishMovieRequest();
+            return;
+        }
+        try {
+            android.widget.FrameLayout layer = new android.widget.FrameLayout(this);
+            layer.setBackgroundColor(android.graphics.Color.BLACK);
+            layer.setClickable(true);
+            android.widget.VideoView video = new android.widget.VideoView(this);
+            video.setZOrderMediaOverlay(true);
+            android.widget.FrameLayout.LayoutParams fit = new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.Gravity.CENTER);
+            layer.addView(video, fit);
+            android.view.View.OnTouchListener skip = (view, event) -> {
+                if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    movieSkipped = true;
+                    finishMovieRequest();
+                }
+                return true;
+            };
+            layer.setOnTouchListener(skip);
+            video.setOnTouchListener(skip);
+            movieLayer = layer;
+            movieVideo = video;
+            mLayout.addView(layer, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            if (touchControls != null) touchControls.stopDeviceInput();
+            video.setOnCompletionListener(mp -> {
+                android.util.Log.i("halo", "Bink movie completed");
+                finishMovieRequest();
+            });
+            video.setOnInfoListener((mp, what, extra) -> {
+                if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START)
+                    android.util.Log.i("halo", "Bink movie first video frame rendered");
+                return false;
+            });
+            video.setOnErrorListener((mp, what, extra) -> {
+                android.util.Log.w("halo", "MP4 playback failed: " + what + "/" + extra);
+                moviePlaybackFailed = true;
+                finishMovieRequest();
+                return true;
+            });
+            video.setOnPreparedListener(mp -> {
+                if (movieVideo == video && movieLayer != null) {
+                    try {
+                        video.start();
+                        movieStarted = true;
+                        android.util.Log.i("halo", "Bink movie playback started");
+                    } catch (RuntimeException e) {
+                        android.util.Log.e("halo", "MP4 playback could not start", e);
+                        moviePlaybackFailed = true;
+                        finishMovieRequest();
+                    }
+                }
+            });
+            video.setVideoURI(Uri.fromFile(file));
+        } catch (RuntimeException e) {
+            android.util.Log.e("halo", "Could not play converted Bink movie", e);
+            moviePlaybackFailed = true;
+            finishMovieRequest();
+        }
+    }
+
+    /** Called on the UI thread for completion, skip, error and destruction. */
+    private void finishMovieRequest() {
+        if (movieVideo != null) {
+            android.widget.VideoView video = movieVideo;
+            movieVideo = null;
+            video.setOnCompletionListener(null);
+            video.setOnErrorListener(null);
+            video.setOnPreparedListener(null);
+            video.setOnInfoListener(null);
+            video.stopPlayback();
+        }
+        if (movieLayer != null) {
+            android.widget.FrameLayout layer = movieLayer;
+            movieLayer = null;
+            if (layer.getParent() instanceof ViewGroup)
+                ((ViewGroup) layer.getParent()).removeView(layer);
+        }
+        if (touchControls != null && getWindow().getDecorView().hasWindowFocus())
+            touchControls.startDeviceInput();
+        synchronized (this) {
+            if (movieWait != null) movieWait.countDown();
+        }
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         if (request != EXPORT_LAYOUT && request != IMPORT_LAYOUT) {
             super.onActivityResult(request, result, data); return;
@@ -126,18 +280,33 @@ public class HaloActivity extends SDLActivity {
     }
 
     @Override public void onBackPressed() {
+        // A movie can be pending before its overlay is attached to mLayout.
+        // Treat Back as a skip in that window instead of sending it to the game.
+        if (movieWait != null) {
+            movieSkipped = true;
+            finishMovieRequest();
+            return;
+        }
         if (touchControls != null && touchControls.menuBack()) return;
         super.onBackPressed();
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (touchControls != null && getWindow().getDecorView().hasWindowFocus())
+        // Focus/resume must not restart gameplay input over the movie overlay.
+        if (touchControls != null && movieWait == null
+                && getWindow().getDecorView().hasWindowFocus())
             touchControls.startDeviceInput();
     }
 
     @Override
     protected void onPause() {
+        // Backgrounding is not successful movie completion or an intentional skip.
+        // Cancel even if the overlay has not yet been created on the UI thread.
+        if (movieWait != null) {
+            moviePlaybackFailed = true;
+            finishMovieRequest();
+        }
         if (touchControls != null) touchControls.stopDeviceInput();
         super.onPause();
     }
@@ -145,7 +314,7 @@ public class HaloActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         if (touchControls != null) {
-            if (hasFocus) touchControls.startDeviceInput();
+            if (hasFocus && movieWait == null) touchControls.startDeviceInput();
             else touchControls.stopDeviceInput();
         }
         super.onWindowFocusChanged(hasFocus);
@@ -153,6 +322,8 @@ public class HaloActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        if (movieWait != null) moviePlaybackFailed = true;
+        finishMovieRequest();
         if (touchControls != null) touchControls.stopDeviceInput();
         if (multicastLock != null && multicastLock.isHeld())
             multicastLock.release();
