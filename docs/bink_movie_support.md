@@ -21,12 +21,12 @@ movie basenames into `YAHCEP/movies/` using lowercase names (matching the
 Android runtime resolver), produces H.264/AAC MP4s with yuv420p, and skips
 existing output. Duplicate basenames in different source folders are rejected
 rather than silently overwriting a movie. Pass `--overwrite` to replace them, or `--crf 18` for
-higher quality. Conversion is not yet connected to the game's UI or runtime.
+higher quality. Conversion output is resolved by the Android host's in-game movie playback bridge.
 
 Do not check converted videos, game files, extracted disc images, or private
 assets into this repository.
 
-## Planned Android playback integration
+## Android playback integration and remaining validation
 
 1. Locate the Xbox Bink API bridge and the existing skip path in the shared
    engine and Android host. Retain current skip behavior as a fallback.
@@ -56,20 +56,17 @@ Android decoder approach is simpler for this port.
 - No copyrighted game video is distributed in APKs or GitHub artifacts.
 - Android build and device regression tests pass.
 
-The converter and a private Android MovieActivity are implemented. The
-MovieActivity resolves converted files safely, uses Android's video playback,
-handles completion/errors/Back, and is registered in the manifest. The native
-guest/host bridge does **not yet launch MovieActivity**, so videos will still
-be skipped in gameplay; the acceptance criteria are **not yet met**.
+The integrated player uses a VideoView overlay inside HaloActivity, not the
+standalone MovieActivity. The native guest/host bridge is implemented and
+built, but the device playback acceptance criteria remain unverified.
 
 
 ## Experimental integrated branch (October 9, 2026)
 
 The Android build now imports `host_movie_play`, intercepts
 `bink_playback_start`, resolves movie basenames under `YAHCEP/movies`,
-and plays MP4 on Android through a fullscreen activity, then returns control
-to the guest. The original native Bink stub remains the missing-video
-fallback. Existing game assets are never copied into the APK.
+and plays MP4 on Android through an in-place fullscreen overlay, then returns control
+to the guest. Missing or failed MP4 playback skips the movie without entering the native Bink stub. Existing game assets are never copied into the APK.
 
 **This path is synchronous:** the guest game thread waits while the Android
 activity plays. Device testing is required for SDL lifecycle transitions,
