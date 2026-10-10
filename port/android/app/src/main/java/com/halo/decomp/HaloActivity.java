@@ -138,7 +138,8 @@ public class HaloActivity extends SDLActivity {
         // A lifecycle cancellation can finish before this queued UI task runs.
         // Never open a stale movie over a later request.
         if (movieWait != request) return;
-        if (moviePlaybackFailed || isFinishing() || isDestroyed() || mLayout == null) {
+        // Back may skip a pending request before this queued overlay opens.
+        if (movieSkipped || moviePlaybackFailed || isFinishing() || isDestroyed() || mLayout == null) {
             finishMovieRequest();
             return;
         }
