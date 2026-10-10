@@ -265,7 +265,9 @@ public class HaloActivity extends SDLActivity {
     }
 
     @Override public void onBackPressed() {
-        if (movieLayer != null) {
+        // A movie can be pending before its overlay is attached to mLayout.
+        // Treat Back as a skip in that window instead of sending it to the game.
+        if (movieWait != null) {
             movieSkipped = true;
             finishMovieRequest();
             return;
