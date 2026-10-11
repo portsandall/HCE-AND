@@ -515,6 +515,10 @@ void bink_playback_start(
 	unsigned long flags)
 {
 #ifdef HALO_ANDROID
+    /* Honor the native engine's initialization and precache safeguards. */
+    if (!bink_globals.initialized || cache_files_precache_in_progress())
+        return;
+
     /* Converted .bik movies play synchronously through the Android overlay.
      * The native Bink implementation is a stub, so a missing or failed MP4
      * must be skipped without initializing the unsupported decoder. */
