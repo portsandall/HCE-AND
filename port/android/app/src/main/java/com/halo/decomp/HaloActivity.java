@@ -28,6 +28,7 @@ public class HaloActivity extends SDLActivity {
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
     private volatile java.util.concurrent.CountDownLatch movieWait;
     private volatile boolean movieStarted;
+    private volatile boolean movieFirstFrameRendered;
     private volatile boolean movieSkipped;
     private volatile boolean moviePlaybackFailed;
     private android.widget.FrameLayout movieLayer;
@@ -111,6 +112,7 @@ public class HaloActivity extends SDLActivity {
             if (movieWait != null) return false;
             movieWait = wait;
             movieStarted = false;
+            movieFirstFrameRendered = false;
             movieSkipped = false;
             moviePlaybackFailed = false;
         }
@@ -177,8 +179,10 @@ public class HaloActivity extends SDLActivity {
                 finishMovieRequest();
             });
             video.setOnInfoListener((mp, what, extra) -> {
-                if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START)
+                if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    movieFirstFrameRendered = true;
                     android.util.Log.i("halo", "Bink movie first video frame rendered");
+                }
                 return false;
             });
             video.setOnErrorListener((mp, what, extra) -> {
@@ -200,12 +204,12 @@ public class HaloActivity extends SDLActivity {
                     }
                 }
             });
-            // MediaPlayer preparation is asynchronous and may never call back
-            // on a device with an unsupported codec. Do not block Halo for
-            // the full 20-minute movie timeout when no frame can start.
+            // Preparation or first-frame rendering may stall even after
+            // MediaPlayer.start() returns. A successful start call alone
+            // does not establish that video is actually rendering.
             moviePrepareTimeout = () -> {
-                if (movieWait == request && movieVideo == video && !movieStarted) {
-                    android.util.Log.w("halo", "Bink movie preparation timed out");
+                if (movieWait == request && movieVideo == video && !movieFirstFrameRendered) {
+                    android.util.Log.w("halo", "Bink movie first-frame timeout");
                     moviePlaybackFailed = true;
                     finishMovieRequest();
                 }
