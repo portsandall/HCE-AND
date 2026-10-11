@@ -32,6 +32,7 @@ public class HaloActivity extends SDLActivity {
     private volatile boolean moviePlaybackFailed;
     private android.widget.FrameLayout movieLayer;
     private android.widget.VideoView movieVideo;
+    private Runnable moviePrepareTimeout;
     private String pendingLayoutExport;
 
     @Override
@@ -199,6 +200,17 @@ public class HaloActivity extends SDLActivity {
                     }
                 }
             });
+            // MediaPlayer preparation is asynchronous and may never call back
+            // on a device with an unsupported codec. Do not block Halo for
+            // the full 20-minute movie timeout when no frame can start.
+            moviePrepareTimeout = () -> {
+                if (movieWait == request && movieVideo == video && !movieStarted) {
+                    android.util.Log.w("halo", "Bink movie preparation timed out");
+                    moviePlaybackFailed = true;
+                    finishMovieRequest();
+                }
+            };
+            video.postDelayed(moviePrepareTimeout, 30_000);
             video.setVideoURI(Uri.fromFile(file));
         } catch (RuntimeException e) {
             android.util.Log.e("halo", "Could not play converted Bink movie", e);
@@ -216,6 +228,10 @@ public class HaloActivity extends SDLActivity {
             video.setOnErrorListener(null);
             video.setOnPreparedListener(null);
             video.setOnInfoListener(null);
+            if (moviePrepareTimeout != null) {
+                video.removeCallbacks(moviePrepareTimeout);
+                moviePrepareTimeout = null;
+            }
             video.stopPlayback();
         }
         if (movieLayer != null) {
