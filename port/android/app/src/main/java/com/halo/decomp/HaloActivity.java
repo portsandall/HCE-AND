@@ -225,6 +225,7 @@ public class HaloActivity extends SDLActivity {
 
     /** Called on the UI thread for completion, skip, error and destruction. */
     private void finishMovieRequest() {
+        try {
         if (movieVideo != null) {
             android.widget.VideoView video = movieVideo;
             movieVideo = null;
@@ -236,7 +237,14 @@ public class HaloActivity extends SDLActivity {
                 video.removeCallbacks(moviePrepareTimeout);
                 moviePrepareTimeout = null;
             }
-            video.stopPlayback();
+            try {
+                video.stopPlayback();
+            } catch (RuntimeException e) {
+                // Decoder cleanup can fail after a preparation/playback error.
+                // Still remove the overlay and release the waiting game thread.
+                moviePlaybackFailed = true;
+                android.util.Log.w("halo", "Bink movie cleanup failed", e);
+            }
         }
         if (movieLayer != null) {
             android.widget.FrameLayout layer = movieLayer;
@@ -246,8 +254,11 @@ public class HaloActivity extends SDLActivity {
         }
         if (touchControls != null && getWindow().getDecorView().hasWindowFocus())
             touchControls.startDeviceInput();
-        synchronized (this) {
-            if (movieWait != null) movieWait.countDown();
+        } finally {
+            // A cleanup exception must never strand the guest thread.
+            synchronized (this) {
+                if (movieWait != null) movieWait.countDown();
+            }
         }
     }
 
