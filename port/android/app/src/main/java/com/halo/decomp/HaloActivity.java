@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.view.Display;
 import android.view.WindowManager;
 import android.view.ViewGroup;
+import android.view.KeyEvent;
 
 import org.libsdl.app.SDLActivity;
 
@@ -308,6 +309,19 @@ public class HaloActivity extends SDLActivity {
         new AlertDialog.Builder(this).setTitle("Layout file")
             .setMessage("Could not complete the operation: "+error.getMessage())
             .setPositiveButton("OK", null).show();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // The guest thread waits during movies, so its normal gamepad skip
+        // polling cannot run. Handle gamepad buttons on the Android UI thread.
+        if (movieWait != null && KeyEvent.isGamepadButton(event.getKeyCode())) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                movieSkipped = true;
+                finishMovieRequest();
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override public void onBackPressed() {
