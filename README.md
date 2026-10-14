@@ -487,7 +487,7 @@ Please keep copyrighted game assets out of issues, pull requests and build artif
 
 ## Known limitations
 
-- Bink video playback is not currently available.
+- Bink playback is experimental on Android: convert your own `.bik` movies to MP4 under `YAHCEP/movies/` using `tools/convert_bink_movies.py`. Debug/release APK builds pass, but actual movie playback, audio, skip and lifecycle behavior remain unverified on a device; missing videos are skipped. See `docs/bink_movie_support.md`.
 - The native engine requires a compatible low-address guest-memory layout.
 - 16 KB kernel-page configurations are currently unsupported.
 - Some multiplayer paths still need broader real-world testing.

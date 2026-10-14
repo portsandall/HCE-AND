@@ -1,0 +1,22 @@
+name: Diagnose Android movie hooks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'port/**'
+      - 'source/**'
+      - 'tools/**'
+      - '.github/workflows/movie-diagnostics.yml'
+jobs:
+  locate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate movie stub and host bridge
+        run: |
+          echo '=== Bink and movie overrides ==='
+          git grep -nEi 'bink_playback_start|BinkOpen|bink_playback_in_progress|Bink video is not available|bink videos are skipped|skip.*movie|movie.*skip' -- port source | head -n 100 || true
+          echo '=== Android native bridge structure ==='
+          find port/android -maxdepth 3 -type f | sort | head -n 120
+          echo '=== JNI entry points ==='
+          git grep -nE 'GetMethodID|CallVoidMethod|JNIEnv|SDL_AndroidGetJNIEnv|startActivity' -- port/android | head -n 100 || true

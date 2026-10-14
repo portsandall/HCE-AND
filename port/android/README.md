@@ -421,7 +421,7 @@ assembly of the port is necessary:
 
 ## Limits
 
-- Bink video is not available. The game skips the movies.
+- Bink playback is experimental: converted MP4 movies in `YAHCEP/movies/` can play through the Android overlay. Missing or unplayable videos are skipped. Physical-device video/audio, skip and lifecycle behavior are not yet verified; see [Bink movie support](../../docs/bink_movie_support.md).
 - The device must let the app reserve the fixed guest addresses, from
   `0x80000000` to approximately `0x89000000`. If the addresses are not
   available, the app shows a message.

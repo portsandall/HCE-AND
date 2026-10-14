@@ -66,3 +66,5 @@ host_porting_action
 host_touch_ui_context
 host_touch_pointer_read
 host_touch_frame
+
+host_movie_play

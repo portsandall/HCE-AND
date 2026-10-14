@@ -23,6 +23,8 @@ debug.sample_seconds from it, for the sampler that runs here.
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_system.h>
+#include <jni.h>
 #include <android/log.h>
 #include <errno.h>
 #include <ftw.h>
@@ -83,6 +85,37 @@ void host_exit(int code)
 int host_errno(void)
 {
 	return errno;
+}
+
+/* Android movie bridge. Called from the ILP32 guest thread. JNI awaits
+ * completion while a separate Activity handles decoding/rendering. */
+int host_movie_play(const char *filename)
+{
+    JNIEnv *env;
+    jobject activity;
+    jclass cls;
+    jmethodID method;
+    jstring name;
+    jboolean played = JNI_FALSE;
+    if (!filename || !*filename) return 0;
+    env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    activity = (jobject)SDL_GetAndroidActivity();
+    if (!env || !activity) return 0;
+    cls = (*env)->GetObjectClass(env, activity);
+    method = cls ? (*env)->GetMethodID(env, cls, "playMovieBlocking", "(Ljava/lang/String;)Z") : NULL;
+    name = method ? (*env)->NewStringUTF(env, filename) : NULL;
+    if (name) {
+        played = (*env)->CallBooleanMethod(env, activity, method, name);
+        (*env)->DeleteLocalRef(env, name);
+    }
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        played = JNI_FALSE;
+    }
+    if (cls) (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return played == JNI_TRUE;
 }
 
 /* ---------- paths */

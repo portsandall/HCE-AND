@@ -106,6 +106,14 @@ jobs:
       - name: Menu touch gesture tests
         run: python3 tools/test_menu_touch.py
 
+      - name: Install FFmpeg for Bink conversion tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Bink movie conversion smoke test
+        run: python3 tools/test_bink_conversion.py
+
       - name: Debug
         env:
           HALO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

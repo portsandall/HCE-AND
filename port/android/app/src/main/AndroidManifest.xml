@@ -78,6 +78,13 @@
                 android:value="game" />
         </activity>
 
+        <!-- Converted Bink MP4 playback, launched by the game bridge -->
+        <activity
+            android:name=".MovieActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <!-- the downloaded new version, for the package installer (Updater) -->
         <provider
             android:name=".UpdateProvider"

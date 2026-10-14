@@ -113,6 +113,7 @@ void host_gl_wait_frame(unsigned int slot);
 
 /* the storage directories the port uses, copied into buffer */
 void host_android_path(int which, char *buffer, unsigned int size);
+int host_movie_play(const char *filename);
 
 #ifdef HALO_ANDROID
 #include "../../../shared/include/halo_porting_ui.h"

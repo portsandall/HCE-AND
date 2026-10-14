@@ -163,6 +163,11 @@ const char *attract_mode_get_localized_movie_path(
 			break;
 		}
 
+#ifdef HALO_ANDROID
+        /* The MP4 lives in shared storage, not at the Xbox Bink path.
+         * Let the Android host resolve the selected movie. */
+        break;
+#else
 		if (file_exists(file_reference_create_from_path(&movie_file, bss_00453ae8, FALSE)))
 		{
 			break;
@@ -185,6 +190,7 @@ const char *attract_mode_get_localized_movie_path(
 
 			break;
 		}
+#endif /* !HALO_ANDROID */
 	}
 
 	return bss_00453ae8;

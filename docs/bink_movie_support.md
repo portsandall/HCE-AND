@@ -1,0 +1,74 @@
+# Bink movie support — HCE-AND
+
+**Status: experimental Bink-to-MP4 Android playback bridge; debug/release APK builds and synthetic conversion tests pass, but playback on a physical device remains unverified.**
+
+This branch includes a converter and experimental Android movie playback bridge.
+The host resolves MP4 files in YAHCEP/movies using original movie basenames.
+No game video assets or proprietary Bink SDK dependencies are bundled.
+
+## Convert your own Xbox game files
+
+Extract the `bink/` directory from a game disc that you own. In Termux:
+
+```sh
+pkg install python ffmpeg
+python tools/convert_bink_movies.py /storage/emulated/0/Download/halo-bink --output /storage/emulated/0/YAHCEP/movies
+```
+
+Or run on a PC or in a CI workspace against user-supplied local assets.
+The converter recursively finds `.bik` (case-insensitive), flattens the
+movie basenames into `YAHCEP/movies/` using lowercase names (matching the
+Android runtime resolver), produces H.264/AAC MP4s with yuv420p, and skips
+existing output. Duplicate basenames in different source folders are rejected
+rather than silently overwriting a movie. Pass `--overwrite` to replace them, or `--crf 18` for
+higher quality. Conversion output is resolved by the Android host's in-game movie playback bridge.
+
+Do not check converted videos, game files, extracted disc images, or private
+assets into this repository.
+
+## Android playback integration and remaining validation
+
+1. Locate the Xbox Bink API bridge and the existing skip path in the shared
+   engine and Android host. Retain current skip behavior as a fallback.
+2. Resolve the requested movie's original `.bik` filename against
+   `/storage/emulated/0/YAHCEP/movies/<name>.mp4`. Canonicalize and validate
+   paths and reject traversal.
+3. Implement Android host playback with MediaCodec/MediaExtractor or
+   Media3/ExoPlayer, presenting the decoded video full-screen and aspect-correct.
+   Keep it separate from the 32-bit ILP32 guest: cross the existing host bridge.
+4. Transfer playback start, completion, errors and user-skip back into the
+   game's movie state machine without blocking SDL/game render threads.
+   Restore input focus and GL state; synchronize audio and allow interruption.
+5. Verify intro, attract, credits, missing-file fallback, rotation, resume,
+   sound, original game sequencing, and multiple Android devices.
+
+**Alternative:** Native Bink decoding via FFmpeg libraries and SDL textures
+would avoid preprocessing but increases binary size, maintenance and licensing
+work, and needs the same engine movie-state integration. The converted MP4 +
+Android decoder approach is simpler for this port.
+
+## Acceptance criteria
+
+- Videos play in the actual game instead of being skipped.
+- Original game data without converted videos behaves as it did before.
+- Playback honors skip/exit, correct aspect ratio, synchronized audio, and
+  returns to the correct game state without input/GPU disruption.
+- No copyrighted game video is distributed in APKs or GitHub artifacts.
+- Android build and device regression tests pass.
+
+The integrated player uses a VideoView overlay inside HaloActivity, not the
+standalone MovieActivity. The native guest/host bridge is implemented and
+built, but the device playback acceptance criteria remain unverified.
+
+
+## Experimental integrated branch (October 9, 2026)
+
+The Android build now imports `host_movie_play`, intercepts
+`bink_playback_start`, resolves movie basenames under `YAHCEP/movies`,
+and plays MP4 on Android through an in-place fullscreen overlay, then returns control
+to the guest. Missing or failed MP4 playback skips the movie without entering the native Bink stub. Existing game assets are never copied into the APK.
+
+**This path is synchronous:** the guest game thread waits while the Android
+activity plays. Device testing is required for SDL lifecycle transitions,
+sound restoration, game UI state, credits behavior and video navigation.
+On-screen video playback and release quality are not yet verified.
