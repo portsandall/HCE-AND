@@ -176,7 +176,13 @@ public class HaloActivity extends SDLActivity {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             if (touchControls != null) touchControls.stopDeviceInput();
             video.setOnCompletionListener(mp -> {
-                android.util.Log.i("halo", "Bink movie completed");
+                if (!movieFirstFrameRendered) {
+                    // Completion alone is not proof that the MP4 displayed video.
+                    moviePlaybackFailed = true;
+                    android.util.Log.w("halo", "Bink movie completed without a rendered video frame");
+                } else {
+                    android.util.Log.i("halo", "Bink movie completed");
+                }
                 finishMovieRequest();
             });
             video.setOnInfoListener((mp, what, extra) -> {
